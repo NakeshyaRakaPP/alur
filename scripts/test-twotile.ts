@@ -14,6 +14,7 @@ import {
   dragBegin,
   dragFinish,
   findBeltPath,
+  findMachineExitPath,
   footprintCells,
   heldTileOf,
 } from '../src/geometry';
@@ -174,6 +175,46 @@ console.log('(d) kotak putih port hilang total, penanda SPLIT + titik routing te
   expect(!css.includes('.port-hit'), 'CSS tidak lagi punya aturan .port-hit');
   expect(board.includes('port-marker') && css.includes('.port-marker'), 'penanda port SPLIT (port-marker) tetap ada');
   expect(board.includes('route-dots') && css.includes('.route-dot'), 'titik routing SPLIT (route-dots) tetap ada');
+}
+
+console.log('(e) keluar BUFFER: badan mesin sendiri tidak memaksa belok (bug Chapter 3)');
+{
+  // Exact reported geometry (c3-1): BUFFER at 4,3 (tiles 4,3 + 5,3),
+  // OUTPUT to the east. The player holds TILE 1 and drags east.
+  const placed: Record<string, NodeDef> = { '4,3': { type: 'tahan', size: 3 } };
+  const bufCells = footprintCells('4,3', placed);
+  const blocked = blockedFor(placed);
+  const goals = beltGoalCells(footprintCells('OUT', placed), blocked);
+
+  const heldOnly = findBeltPath({ srcCells: ['4,3'], goalCells: goals, blocked, budget: Infinity });
+  expect(
+    heldOnly.path !== null && heldOnly.path.length > 4,
+    'reproduksi bug: rute dari tile 1 saja memutar (' + (heldOnly.path?.length ?? -1) + ' rail)',
+  );
+
+  const exit = findMachineExitPath({ srcCells: bufCells, heldTile: '4,3', goalCells: goals, blocked, budget: Infinity });
+  expect(
+    exit.path !== null && exit.path.join(' ') === '6,3 7,3 8,3 9,3',
+    'tahan tile 1, tarik ke timur: lurus dari tepi tile 2 (dapat ' + (exit.path?.join(' ') ?? 'null') + ')',
+  );
+  const tight = findMachineExitPath({ srcCells: bufCells, heldTile: '4,3', goalCells: goals, blocked, budget: 4 });
+  expect(tight.overBudget === false, 'rute lurus muat di anggaran 4 rail (rute memutar akan over)');
+
+  // Mirror: hold TILE 2, drag west toward INPUT — straight off tile 1's edge.
+  const goalsIn = beltGoalCells(footprintCells('IN', placed), blocked);
+  const exitW = findMachineExitPath({ srcCells: bufCells, heldTile: '5,3', goalCells: goalsIn, blocked, budget: Infinity });
+  expect(
+    exitW.path !== null && exitW.path.join(' ') === '3,3 2,3 1,3',
+    'tahan tile 2, tarik ke barat: lurus dari tepi tile 1 (dapat ' + (exitW.path?.join(' ') ?? 'null') + ')',
+  );
+
+  // Held tile still wins when its own route is the shortest: hold tile 1,
+  // target due west — the route departs tile 1's west edge directly.
+  const exitHeld = findMachineExitPath({ srcCells: bufCells, heldTile: '4,3', goalCells: goalsIn, blocked, budget: Infinity });
+  expect(
+    exitHeld.path !== null && exitHeld.path[0] === '3,3' && exitHeld.path.length === 3,
+    'tile tahanan tetap dipakai bila rutenya memang terpendek',
+  );
 }
 
 if (failures) {

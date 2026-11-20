@@ -18,7 +18,7 @@ export default function HomeScreen({ progress, expertProgress, demo, onPlay }: H
         <span>
           Systems shipped: <b>{done}</b> of <b>{LEVELS.length}</b> levels
         </span>
-        {demo && <span className="demo-badge">DEMO VERSION — ONLY CHAPTER 1 IS PLAYABLE</span>}
+        {demo && <span className="demo-badge">DEMO — CHAPTER 1 ONLY</span>}
       </div>
 
       {CHAPTERS.map((ch) => {
@@ -27,7 +27,7 @@ export default function HomeScreen({ progress, expertProgress, demo, onPlay }: H
           <section key={ch.n} className="chapter-block">
             <h2>
               {ch.title}
-              {locked && <span className="locked-note"> — locked in the demo version</span>}
+              {locked && <span className="locked-note"> — full app only</span>}
             </h2>
             <div className="level-grid">
               {levelsOfChapter(ch.n).map((level) => {
@@ -55,13 +55,13 @@ export default function HomeScreen({ progress, expertProgress, demo, onPlay }: H
                     <span className="level-name">{level.name}</span>
                     <span className="level-meta">
                       {locked ? (
-                        'Available in the full app'
+                        'Full app only'
                       ) : stars > 0 ? (
                         <>
                           <span className="stars-sm">{'★'.repeat(stars) + '☆'.repeat(3 - stars)}</span> Done
                         </>
                       ) : (
-                        'Not played yet'
+                        'New'
                       )}
                     </span>
                     {p?.best && !locked && (

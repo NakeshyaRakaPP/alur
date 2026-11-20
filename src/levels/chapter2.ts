@@ -6,9 +6,9 @@ export const chapter2: Level[] = [
     chapter: 2,
     name: 'Level 6 — Split',
     brief:
-      'The SPLIT machine has three out ports: the color named on it leaves by the top port, a second named color — when the machine names one — leaves by the side port, and everything else goes to the bottom port. This machine names only one color. <b>Red to Output A, blue to Output B</b>, with nothing swapped or discarded.',
+      '<b>Red → Output A. Blue → Output B.</b>',
     briefId:
-      'Node PISAH punya tiga port keluar: warna yang tertulis padanya keluar lewat port atas, warna kedua yang disebut — bila node menyebutkannya — keluar lewat port samping, dan sisanya ke port bawah. Node ini hanya menyebut satu warna. <b>Merah ke Output A, biru ke Output B</b>, tanpa ada yang tertukar atau terbuang.',
+      '<b>Merah → Output A. Biru → Output B.</b>',
     stream: ['R', 'B', 'B', 'R', 'B', 'R'],
     outputs: ['A', 'B'],
     target: { A: ['R', 'R', 'R'], B: ['B', 'B', 'B'] },
@@ -29,9 +29,9 @@ export const chapter2: Level[] = [
     chapter: 2,
     name: 'Level 7 — Different Fates',
     brief:
-      'Each branch may be processed on its own. <b>The top branch (red) must be changed to green before Output A</b>, while <b>the bottom branch (blue) goes straight to Output B unchanged</b>.',
+      'Red becomes <b>green</b> → Output A. Blue stays <b>blue</b> → Output B.',
     briefId:
-      'Setiap cabang boleh diolah sendiri-sendiri. <b>Cabang atas (merah) harus diubah menjadi hijau sebelum ke Output A</b>, sedangkan <b>cabang bawah (biru) langsung ke Output B tanpa diubah</b>.',
+      'Merah jadi <b>hijau</b> → Output A. Biru tetap <b>biru</b> → Output B.',
     stream: ['R', 'B', 'R', 'B', 'R', 'B'],
     outputs: ['A', 'B'],
     target: { A: ['G', 'G', 'G'], B: ['B', 'B', 'B'] },
@@ -56,9 +56,9 @@ export const chapter2: Level[] = [
     chapter: 2,
     name: 'Level 8 — Merge Back',
     brief:
-      'One in port may accept more than one connection — that is how flows are merged. Split the flow, <b>change the red branch to green</b>, then <b>merge both branches back into the same Output</b>. The final token order must match the target exactly.',
+      'Red becomes <b>green</b>. All tokens end in the <b>same Output</b>.',
     briefId:
-      'Satu port masuk boleh menerima lebih dari satu sambungan — itulah cara menggabungkan aliran. Pisahkan aliran, <b>ubah cabang merah menjadi hijau</b>, lalu <b>gabungkan kedua cabang kembali ke Output yang sama</b>. Urutan akhir token harus persis seperti target.',
+      'Merah jadi <b>hijau</b>. Semua token berakhir di <b>Output yang sama</b>.',
     stream: ['R', 'B', 'R', 'B'],
     outputs: ['OUT'],
     target: { OUT: ['G', 'B', 'G', 'B'] },
@@ -83,9 +83,9 @@ export const chapter2: Level[] = [
     chapter: 2,
     name: 'Level 9 — Sort',
     brief:
-      'The SORT machine holds every token that enters and only releases them <b>after the incoming flow ends</b>, ordered by the color order written on it. Turn this mixed three-color flow into neat color groups.',
+      'Mixed colors in. <b>Grouped by color</b> out.',
     briefId:
-      'Node URUTKAN menampung semua token yang masuk dan baru melepasnya <b>setelah aliran masuk habis</b>, terurut mengikuti urutan warna yang tertulis padanya. Ubah aliran tiga warna yang acak ini menjadi kelompok warna yang rapi.',
+      'Warna campur masuk. Keluar <b>berkelompok per warna</b>.',
     stream: ['G', 'R', 'B', 'G', 'B', 'R'],
     outputs: ['OUT'],
     target: { OUT: ['R', 'R', 'B', 'B', 'G', 'G'] },
@@ -105,9 +105,9 @@ export const chapter2: Level[] = [
     chapter: 2,
     name: 'Level 10 — Chapter 2 Test',
     brief:
-      'Chapter 2 test: split, change, and merge combined. <b>Green tokens go straight to the Output. The remaining tokens must be changed to blue first, then merged into the same Output.</b> The final order must match the target exactly.',
+      '<b>Green</b> goes straight to the Output. The rest become <b>blue</b> first, then join it.',
     briefId:
-      'Ujian Chapter 2: gabungan pisah, ubah, dan gabung. <b>Token hijau langsung ke Output. Token sisanya harus diubah menjadi biru dulu, lalu digabungkan ke Output yang sama.</b> Urutan akhir harus persis seperti target.',
+      '<b>Hijau</b> langsung ke Output. Sisanya jadi <b>biru</b> dulu, lalu ikut ke sana.',
     stream: ['R', 'G', 'B', 'G', 'R', 'G'],
     outputs: ['OUT'],
     target: { OUT: ['B', 'G', 'B', 'G', 'B', 'G'] },

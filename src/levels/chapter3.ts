@@ -6,15 +6,15 @@ export const chapter3: Level[] = [
     chapter: 3,
     name: 'Level 11 — Buffer',
     brief:
-      'The BUFFER machine holds tokens until they reach its batch size, then releases them all at once as one <b>pack</b>. The Output of this level <b>only accepts packs of 3</b> — tokens that arrive one by one will be rejected. The flow is a single color; what is being practiced is how packs work.',
+      'Output only takes <b>packs of 3</b>.',
     briefId:
-      'Node TAHAN menahan token sampai terkumpul sejumlah isinya, lalu melepasnya sekaligus sebagai satu <b>paket</b>. Output level ini <b>hanya menerima paket isi 3</b> — token yang datang satuan akan ditolak. Alirannya satu warna; yang dilatih adalah cara paket bekerja.',
+      'Output hanya menerima <b>paket isi 3</b>.',
     stream: ['R', 'R', 'R', 'R', 'R', 'R'],
     outputs: ['OUT'],
     target: { OUT: ['R', 'R', 'R', 'R', 'R', 'R'] },
     packageRule: { OUT: 3 },
-    goalText: 'Target: <b>Output</b> = 2 packs of 3 Red (via BUFFER)',
-    goalTextId: 'Target: <b>Output</b> = 2 paket Merah isi 3 (lewat TAHAN)',
+    goalText: 'Target: <b>Output</b> = 2 packs of 3 Red',
+    goalTextId: 'Target: <b>Output</b> = 2 paket Merah isi 3',
     par: 1,
     railLimit: 9,
     tray: [{ type: 'tahan', size: 3 }],
@@ -31,15 +31,15 @@ export const chapter3: Level[] = [
     chapter: 3,
     name: 'Level 12 — Filter First, Then Pack',
     brief:
-      'The order of machines decides the result. <b>Filter the green tokens out of the mixed flow first, then pack them with BUFFER.</b> If they are packed before being filtered, the packs are mixed with other colors and rejected by the Output.',
+      'Pick the <b>green</b> out first. Then pack: <b>packs of 3</b>.',
     briefId:
-      'Urutan node menentukan hasil. <b>Saring dulu token hijau dari aliran campuran, baru paketkan dengan TAHAN.</b> Kalau dipaketkan sebelum disaring, paketnya tercampur warna lain dan ditolak Output.',
+      'Ambil <b>hijau</b>nya dulu. Lalu paketkan: <b>paket isi 3</b>.',
     stream: ['G', 'R', 'G', 'B', 'G', 'R', 'G', 'B', 'G', 'G'],
     outputs: ['OUT'],
     target: { OUT: ['G', 'G', 'G', 'G', 'G', 'G'] },
     packageRule: { OUT: 3 },
-    goalText: 'Target: <b>Output</b> = 2 packs of 3 Green (filtered, then via BUFFER)',
-    goalTextId: 'Target: <b>Output</b> = 2 paket Hijau isi 3 (disaring, lalu lewat TAHAN)',
+    goalText: 'Target: <b>Output</b> = 2 packs of 3 Green',
+    goalTextId: 'Target: <b>Output</b> = 2 paket Hijau isi 3',
     par: 2,
     railLimit: 8,
     tray: [{ type: 'filter', color: 'G' }, { type: 'tahan', size: 3 }],
@@ -60,17 +60,17 @@ export const chapter3: Level[] = [
     chapter: 3,
     name: 'Level 13 — Two Outputs, Two Treatments',
     brief:
-      '<b>Output A accepts packs of 3 green via BUFFER</b> (2 packs in total), while <b>Output B accepts blue tokens directly</b> without being packed. Split the flow first, then treat each branch according to its destination.',
+      '<b>Output A:</b> packs of 3 green. <b>Output B:</b> blue, one by one.',
     briefId:
-      '<b>Output A menerima paket hijau isi 3 lewat TAHAN</b> (total 2 paket), sedangkan <b>Output B menerima token biru langsung</b> tanpa dipaketkan. Pisahkan dulu alirannya, lalu perlakukan tiap cabang sesuai tujuannya.',
+      '<b>Output A:</b> paket hijau isi 3. <b>Output B:</b> biru, satu-satu.',
     stream: ['G', 'B', 'G', 'B', 'G', 'B', 'G', 'B', 'G', 'B', 'G', 'B'],
     outputs: ['A', 'B'],
     target: { A: ['G', 'G', 'G', 'G', 'G', 'G'], B: ['B', 'B', 'B', 'B', 'B', 'B'] },
     packageRule: { A: 3 },
     goalText:
-      'Target: <b>Output A</b> = 2 packs of 3 Green (via BUFFER) &nbsp;|&nbsp; <b>Output B</b> = Blue × 6 (direct)',
+      'Target: <b>Output A</b> = 2 packs of 3 Green &nbsp;|&nbsp; <b>Output B</b> = Blue × 6',
     goalTextId:
-      'Target: <b>Output A</b> = 2 paket Hijau isi 3 (lewat TAHAN) &nbsp;|&nbsp; <b>Output B</b> = Biru × 6 (langsung)',
+      'Target: <b>Output A</b> = 2 paket Hijau isi 3 &nbsp;|&nbsp; <b>Output B</b> = Biru × 6',
     par: 2,
     railLimit: 18,
     tray: [{ type: 'split', color: 'G' }, { type: 'tahan', size: 3 }],
@@ -92,17 +92,17 @@ export const chapter3: Level[] = [
     chapter: 3,
     name: 'Final — Full System',
     brief:
-      'The hardest level. <b>Output A</b> only accepts <b>packs of 3 green</b> released by the BUFFER machine — 2 packs in total. <b>Output B</b> accepts blue that <b>comes from red that was changed</b>; original blue from the incoming flow must be discarded. The rack holds exactly 4 machines, with no spares and no helpful decoys.',
+      '<b>Output A:</b> packs of 3 green. <b>Output B:</b> blue made from red — real blue is trash.',
     briefId:
-      'Level tersulit. <b>Output A</b> hanya menerima <b>paket hijau isi 3</b> yang dilepas node TAHAN — total harus 2 paket. <b>Output B</b> menerima biru yang <b>berasal dari merah yang diubah</b>; biru asli dari aliran masuk harus dibuang. Rak berisi tepat 4 node, tidak ada cadangan dan tidak ada pengecoh yang membantu.',
+      '<b>Output A:</b> paket hijau isi 3. <b>Output B:</b> biru dari merah — biru asli dibuang.',
     stream: ['R', 'B', 'G', 'G', 'R', 'B', 'G', 'R', 'G', 'B', 'G', 'G'],
     outputs: ['A', 'B'],
     target: { A: ['G', 'G', 'G', 'G', 'G', 'G'], B: ['B', 'B', 'B'] },
     packageRule: { A: 3 },
     goalText:
-      'Target: <b>Output A</b> = 2 packs of 3 Green (via BUFFER) &nbsp;|&nbsp; <b>Output B</b> = Blue, Blue, Blue (changed from Red)',
+      'Target: <b>Output A</b> = 2 packs of 3 Green &nbsp;|&nbsp; <b>Output B</b> = Blue × 3 (from Red)',
     goalTextId:
-      'Target: <b>Output A</b> = 2 paket Hijau isi 3 (lewat TAHAN) &nbsp;|&nbsp; <b>Output B</b> = Biru, Biru, Biru (dari Merah yang diubah)',
+      'Target: <b>Output A</b> = 2 paket Hijau isi 3 &nbsp;|&nbsp; <b>Output B</b> = Biru × 3 (dari Merah)',
     par: 4,
     railLimit: 17,
     tray: [

@@ -11,6 +11,7 @@ import {
   beltEndKey,
   beltGoalCells,
   beltTileKey,
+  boardWarpTransform,
   cellCenter,
   cellPlaceable,
   diamondAt,
@@ -20,11 +21,12 @@ import {
   dragFinish,
   dragOpenEnd,
   edgeRefCell,
-  findBeltPath,
+  findMachineExitPath,
   findTrailExtension,
   footprintCells,
   footprintOf,
   footprintOfType,
+  footprintQuad,
   fpCenterOf,
   heldTileOf,
   isoCenter,
@@ -36,6 +38,8 @@ import {
   pickSplitPort3,
   portPos,
   splitLivePort3,
+  splitPortAngles,
+  splitPortDirs,
 } from '../geometry';
 import type { DragCtx, DragHover, Point } from '../geometry';
 import { BELT_IMG, COLOR_HEX, INPUT_IMG, NODE_IMG, OUTPUT_IMG, nodeLabel, splitRoutingOf } from '../nodeMeta';
@@ -60,6 +64,10 @@ export interface BoardProps {
   lockedIds?: string[];
   /** End cell of an open trail where a token stopped (failed run): pulsed on the board. */
   stuckCell?: string | null;
+  /** Camera azimuth in degrees (0 = classic view). The board re-projects everything from it. */
+  angle: number;
+  /** Reports camera rotations from floor drags; the owner keeps the angle so the token layer shares it. */
+  onAngleChange: (deg: number) => void;
   onPlace: (cell: string) => void;
   onPlaceRejected: (cell: string) => void;
   onUnplace: (id: string) => void;
@@ -84,6 +92,8 @@ interface DragState {
   fixedPort: boolean;
   /** Trail-continuation session: the trail's laid path, kept as a frozen prefix the drag may only extend from its tip. Null for ordinary drags. */
   frozen: string[] | null;
+  /** The footprint tile the player held to start this drag: the exit route prefers it whenever it costs no extra rails. */
+  srcTile: string | null;
 }
 
 interface DownInfo {
@@ -123,6 +133,7 @@ const HOLD_MS = 220;
 
 export default function Board(props: BoardProps) {
   const { level, placed, conns, ghost, bufLabels, flashNodeId } = props;
+  const angle = props.angle;
   const [drag, setDrag] = useState<DragState | null>(null);
   const [hoverCell, setHoverCell] = useState<string | null>(null);
   const [flashCellKey, setFlashCellKey] = useState<string | null>(null);
@@ -133,6 +144,9 @@ export default function Board(props: BoardProps) {
 
   const propsRef = useRef(props);
   propsRef.current = props;
+  const angleRef = useRef(angle);
+  angleRef.current = angle;
+  const camRef = useRef<{ pointerId: number; startX: number; startAngle: number; active: boolean } | null>(null);
   const dragRef = useRef<DragState | null>(null);
   dragRef.current = drag;
   const downRef = useRef<DownInfo | null>(null);
@@ -173,7 +187,7 @@ export default function Board(props: BoardProps) {
 
   function evtCell(clientX: number, clientY: number): string | null {
     const pt = evtPoint(clientX, clientY);
-    return pt ? pickCell(pt.x, pt.y) : null;
+    return pt ? pickCell(pt.x, pt.y, angleRef.current) : null;
   }
 
   function spriteKindOf(id: string): SpriteKind {
@@ -190,16 +204,17 @@ export default function Board(props: BoardProps) {
    */
   function machineAtPoint(pt: Point): string | null {
     const p = propsRef.current;
+    const ang = angleRef.current;
     if (!masksReady()) {
-      const cell = pickCell(pt.x, pt.y);
+      const cell = pickCell(pt.x, pt.y, ang);
       return cell ? machineAtCell(cell, p.placed) : null;
     }
     const ids = ['IN', ...p.level.outputs, ...Object.keys(p.placed)];
     const ordered = ids
-      .map((id) => ({ id, d: machineDepth(id, p.placed) }))
+      .map((id) => ({ id, d: machineDepth(id, p.placed, ang) }))
       .sort((a, b) => b.d - a.d);
     for (const { id } of ordered) {
-      const ctr = fpCenterOf(id, p.placed);
+      const ctr = fpCenterOf(id, p.placed, ang);
       const fp = footprintOf(id, p.placed);
       const S = 112 * (fp.w === 2 ? 1.25 : 1);
       const u = (pt.x - (ctr.x - S / 2)) / S;
@@ -252,15 +267,11 @@ export default function Board(props: BoardProps) {
     const [srcId, idxStr] = portKey.split(':');
     const idx = parseInt(idxStr, 10);
     const blocked = computeBlocked(portKey);
-    // An ordinary drag departs from the tile the player actually held (a
-    // 2-tile machine can be drawn from either half); a trail continuation
-    // keeps the full footprint, since its origin is the trail tip, not the
-    // machine.
-    const originCells = frozen
-      ? footprintCells(srcId, p.placed)
-      : srcTile
-        ? [srcTile]
-        : footprintCells(srcId, p.placed);
+    // A drag may depart from any edge of the source footprint (a 2-tile
+    // machine's own body never forces a detour); the held tile is kept on
+    // the session and wins whenever its route costs no extra rails — see
+    // findMachineExitPath.
+    const originCells = footprintCells(srcId, p.placed);
     const ctx = dragBegin(p.conns, portKey, machineCell(srcId), p.level.railLimit, originCells);
     if (frozen) {
       // Trail continuation: the laid path is a frozen prefix, not a route to
@@ -271,7 +282,7 @@ export default function Board(props: BoardProps) {
       for (const c of frozen) blocked.add(c);
       ctx.path = [...frozen];
     }
-    setDrag({ pointerId, srcId, idx, srcKey: portKey, ctx, blocked, hoverMachine: null, cell: null, over: false, fixedPort, frozen });
+    setDrag({ pointerId, srcId, idx, srcKey: portKey, ctx, blocked, hoverMachine: null, cell: null, over: false, fixedPort, frozen, srcTile });
     p.onDragRails(ctx.base + ctx.path.length);
   }
 
@@ -294,7 +305,7 @@ export default function Board(props: BoardProps) {
     const p = propsRef.current;
     const pt = evtPoint(clientX, clientY);
     if (!pt) return;
-    const key = pickCell(pt.x, pt.y);
+    const key = pickCell(pt.x, pt.y, angleRef.current);
     let d = d0;
 
     const srcNode = p.placed[d.srcId];
@@ -306,7 +317,7 @@ export default function Board(props: BoardProps) {
       // back in and out another end switches ports mid-drag — no second
       // hold, no lifting the pointer. Trail-continuation sessions keep
       // their origin port fixed and skip this entirely.
-      const a = anchorOf(d.srcId);
+      const a = anchorOf(d.srcId, angleRef.current);
       const ang = (Math.atan2(pt.y - a.y, pt.x - a.x) * 180) / Math.PI;
       const dist = Math.hypot(pt.x - a.x, pt.y - a.y);
       const newIdx = splitLivePort3(
@@ -315,6 +326,7 @@ export default function Board(props: BoardProps) {
         ang,
         dist,
         d.idx,
+        splitPortAngles(angleRef.current),
       );
       if (newIdx !== d.idx) d = switchDragPort(d, newIdx);
     }
@@ -359,8 +371,9 @@ export default function Board(props: BoardProps) {
       }
     } else if (hoverMachine && hoverMachine !== d.srcId && hoverMachine !== 'IN') {
       const dstCells = footprintCells(hoverMachine, p.placed);
-      const res = findBeltPath({
+      const res = findMachineExitPath({
         srcCells: d.ctx.srcCells,
+        heldTile: d.srcTile,
         goalCells: beltGoalCells(dstCells, d.blocked),
         directCells: dstCells,
         blocked: d.blocked,
@@ -369,8 +382,9 @@ export default function Board(props: BoardProps) {
       path = res.path ?? [];
       over = res.overBudget;
     } else if (!hoverMachine && key && !d.blocked.has(key)) {
-      const res = findBeltPath({
+      const res = findMachineExitPath({
         srcCells: d.ctx.srcCells,
+        heldTile: d.srcTile,
         goalCells: [key],
         blocked: d.blocked,
         budget,
@@ -436,7 +450,7 @@ export default function Board(props: BoardProps) {
     if (!pt) return;
     lastPointerRef.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
     const p = propsRef.current;
-    const cell = pickCell(pt.x, pt.y);
+    const cell = pickCell(pt.x, pt.y, angleRef.current);
     const mach = machineAtPoint(pt);
     const info: DownInfo = {
       x: e.clientX,
@@ -460,6 +474,14 @@ export default function Board(props: BoardProps) {
       }
     }
     downRef.current = info;
+
+    // A press on truly empty floor (no machine, no belt, no trail tip)
+    // arms a camera drag: sliding sideways orbits the board. A press that
+    // barely moves stays a click — the release handler's movement gate
+    // already ignores drags, so the two never fight.
+    if (!mach && !info.conn && !info.trailKey) {
+      camRef.current = { pointerId: e.pointerId, startX: e.clientX, startAngle: p.angle, active: false };
+    }
 
     if (info.trailKey) {
       const trailKey = info.trailKey;
@@ -491,12 +513,13 @@ export default function Board(props: BoardProps) {
         // port wins unless the press lands deep in a taken port's sector —
         // see pickSplitPort3); the port markers show the choice for as long
         // as the hold/drag lasts.
-        const a = anchorOf(mach);
+        const a = anchorOf(mach, angleRef.current);
         idx = pickSplitPort3(
           [!!p.conns[mach + ':0'], !!p.conns[mach + ':1'], !!p.conns[mach + ':2']],
           (Math.atan2(pt.y - a.y, pt.x - a.x) * 180) / Math.PI,
           Math.hypot(pt.x - a.x, pt.y - a.y),
           -1,
+          splitPortAngles(angleRef.current),
         );
         setHoldIdx(idx);
       }
@@ -504,7 +527,7 @@ export default function Board(props: BoardProps) {
       const pointerId = e.pointerId;
       // The tile this press belongs to: a belt out of a 2-tile machine
       // departs from the held tile's edge, not always the anchor's.
-      const heldTile = heldTileOf(footprintCells(mach, p.placed), pt);
+      const heldTile = heldTileOf(footprintCells(mach, p.placed), pt, angleRef.current);
       setHoldId(mach);
       holdTimerRef.current = window.setTimeout(() => {
         holdTimerRef.current = null;
@@ -523,6 +546,16 @@ export default function Board(props: BoardProps) {
   useEffect(() => {
     function onMove(e: PointerEvent) {
       lastPointerRef.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
+      const cam = camRef.current;
+      if (cam && e.pointerId === cam.pointerId && !dragRef.current) {
+        const dx = e.clientX - cam.startX;
+        if (Math.abs(dx) > 4) cam.active = true;
+        if (cam.active) {
+          const next = (((cam.startAngle + dx * 0.45) % 360) + 360) % 360;
+          propsRef.current.onAngleChange(next);
+          return;
+        }
+      }
       if (dragRef.current) {
         dragMove(e.clientX, e.clientY, e.pointerId);
         return;
@@ -532,6 +565,7 @@ export default function Board(props: BoardProps) {
       setHoverCell((prev) => (prev === key ? prev : key));
     }
     function onUp(e: PointerEvent) {
+      if (camRef.current && e.pointerId === camRef.current.pointerId) camRef.current = null;
       if (dragRef.current) {
         finishDrag();
         return;
@@ -565,6 +599,7 @@ export default function Board(props: BoardProps) {
       }
     }
     function onCancel() {
+      camRef.current = null;
       cancelHold();
       if (dragRef.current) {
         dragRef.current = null;
@@ -591,7 +626,7 @@ export default function Board(props: BoardProps) {
   for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) floorCells.push({ c, r });
 
   const machineEntries: { d: number; id: string }[] = allIds.map((id) => ({
-    d: machineDepth(id, placedDefs),
+    d: machineDepth(id, placedDefs, angle),
     id,
   }));
   machineEntries.sort((a, b) => a.d - b.d);
@@ -609,123 +644,129 @@ export default function Board(props: BoardProps) {
 
       <rect x={0} y={0} width={960} height={560} fill="#191C21" />
 
-      {floorCells.map(({ c, r }) => {
-        const ctr = isoCenter(c, r);
-        return (
-          <g key={c + ',' + r}>
-            <polygon
-              points={diamondPoints(ctr, 0.6)}
-              className="floor-cell"
-              fill={(c + r) % 2 === 0 ? '#262A31' : '#2B2F36'}
-            />
-            <circle cx={ctr.x} cy={ctr.y} r={1.7} className="floor-dot" />
+      {/* World painting (floor + pixel belt tiles) is drawn for the classic
+          view and carried into the camera's view by one affine warp, so the
+          pixel 2.5D tileset survives any azimuth. Billboards (machines,
+          tokens, labels) render outside this group, unwarped. */}
+      <g transform={boardWarpTransform(angle)}>
+        {floorCells.map(({ c, r }) => {
+          const ctr = isoCenter(c, r);
+          return (
+            <g key={c + ',' + r}>
+              <polygon
+                points={diamondPoints(ctr, 0.6)}
+                className="floor-cell"
+                fill={(c + r) % 2 === 0 ? '#262A31' : '#2B2F36'}
+              />
+              <circle cx={ctr.x} cy={ctr.y} r={1.7} className="floor-dot" />
+            </g>
+          );
+        })}
+
+        {(props.obstacles ?? []).map((k) => {
+          const c = cellCenter(k);
+          return (
+            <g key={'obs-' + k} className="obstacle-cell">
+              <polygon points={diamondPoints(c, 0.6)} />
+              <line x1={c.x - 13} y1={c.y - 6.5} x2={c.x + 13} y2={c.y + 6.5} />
+              <line x1={c.x - 13} y1={c.y + 6.5} x2={c.x + 13} y2={c.y - 6.5} />
+            </g>
+          );
+        })}
+
+        {ghost && hoverCell && (
+          <g>
+            {footprintCellsAtSafe(hoverCell, ghost.type).map((c) => (
+              <polygon
+                key={c}
+                points={diamondPoints(cellCenter(c), 1.5)}
+                className={'cell-outline' + (ghostPlaceable ? '' : ' bad')}
+              />
+            ))}
           </g>
-        );
-      })}
+        )}
 
-      {(props.obstacles ?? []).map((k) => {
-        const c = cellCenter(k);
-        return (
-          <g key={'obs-' + k} className="obstacle-cell">
-            <polygon points={diamondPoints(c, 0.6)} />
-            <line x1={c.x - 13} y1={c.y - 6.5} x2={c.x + 13} y2={c.y + 6.5} />
-            <line x1={c.x - 13} y1={c.y + 6.5} x2={c.x + 13} y2={c.y - 6.5} />
+        {Object.keys(conns).map((key) => (
+          <g key={key} className="belt-conn" data-conn={key}>
+            {beltTilesFor(key, conns[key], placedDefs).map(({ cell, tile }) => {
+              if (!tile) return null;
+              const c = cellCenter(cell);
+              return (
+                <g key={cell}>
+                  <image
+                    x={c.x - BELT_TILE_CX}
+                    y={c.y - BELT_TILE_CY}
+                    width={BELT_TILE_W}
+                    height={BELT_TILE_H}
+                    href={BELT_IMG.steel[tile]}
+                    data-tile={tile}
+                  />
+                  <polygon points={diamondPoints(c, 2)} className="belt-hit" data-conn={key} />
+                </g>
+              );
+            })}
           </g>
-        );
-      })}
+        ))}
 
-      {ghost && hoverCell && (
-        <g>
-          {footprintCellsAtSafe(hoverCell, ghost.type).map((c) => (
-            <polygon
-              key={c}
-              points={diamondPoints(cellCenter(c), 1.5)}
-              className={'cell-outline' + (ghostPlaceable ? '' : ' bad')}
-            />
-          ))}
-        </g>
-      )}
-
-      {Object.keys(conns).map((key) => (
-        <g key={key} className="belt-conn" data-conn={key}>
-          {beltTilesFor(key, conns[key], placedDefs).map(({ cell, tile }) => {
-            if (!tile) return null;
-            const c = cellCenter(cell);
-            return (
-              <g key={cell}>
+        {drag && (
+          <g className={'belt-preview' + (drag.over ? ' over' : '')}>
+            {drag.ctx.path.map((cell, i) => {
+              const srcCells = footprintCells(drag.srcId, placedDefs);
+              const prev = i === 0 ? edgeRefCell(srcCells, cell, machineCell(drag.srcId)) : drag.ctx.path[i - 1];
+              let tile: string | null;
+              if (i === drag.ctx.path.length - 1 && !dragTarget) {
+                tile = beltEndKey(dirBetween(cell, prev));
+              } else {
+                const next =
+                  i === drag.ctx.path.length - 1
+                    ? edgeRefCell(footprintCells(dragTarget!, placedDefs), cell, machineCell(dragTarget!))
+                    : drag.ctx.path[i + 1];
+                tile = beltTileKey(dirBetween(cell, prev), dirBetween(cell, next));
+              }
+              if (!tile) return null;
+              const c = cellCenter(cell);
+              return (
                 <image
+                  key={cell}
                   x={c.x - BELT_TILE_CX}
                   y={c.y - BELT_TILE_CY}
                   width={BELT_TILE_W}
                   height={BELT_TILE_H}
                   href={BELT_IMG.steel[tile]}
-                  data-tile={tile}
                 />
-                <polygon points={diamondPoints(c, 2)} className="belt-hit" data-conn={key} />
-              </g>
-            );
-          })}
-        </g>
-      ))}
-
-      {drag && (
-        <g className={'belt-preview' + (drag.over ? ' over' : '')}>
-          {drag.ctx.path.map((cell, i) => {
-            const srcCells = footprintCells(drag.srcId, placedDefs);
-            const prev = i === 0 ? edgeRefCell(srcCells, cell, machineCell(drag.srcId)) : drag.ctx.path[i - 1];
-            let tile: string | null;
-            if (i === drag.ctx.path.length - 1 && !dragTarget) {
-              tile = beltEndKey(dirBetween(cell, prev));
-            } else {
-              const next =
-                i === drag.ctx.path.length - 1
-                  ? edgeRefCell(footprintCells(dragTarget!, placedDefs), cell, machineCell(dragTarget!))
-                  : drag.ctx.path[i + 1];
-              tile = beltTileKey(dirBetween(cell, prev), dirBetween(cell, next));
-            }
-            if (!tile) return null;
-            const c = cellCenter(cell);
-            return (
-              <image
-                key={cell}
-                x={c.x - BELT_TILE_CX}
-                y={c.y - BELT_TILE_CY}
-                width={BELT_TILE_W}
-                height={BELT_TILE_H}
-                href={BELT_IMG.steel[tile]}
+              );
+            })}
+            {dragTarget && (
+              <polygon
+                points={diamondPoints(cellCenter(machineCell(dragTarget)), 1)}
+                className="cell-outline ok"
               />
-            );
-          })}
-          {dragTarget && (
-            <polygon
-              points={diamondPoints(cellCenter(machineCell(dragTarget)), 1)}
-              className="cell-outline ok"
-            />
-          )}
-        </g>
-      )}
+            )}
+          </g>
+        )}
 
-      {flashCellKey && (
-        <polygon
-          points={diamondPoints(cellCenter(flashCellKey), 1)}
-          fill="none"
-          stroke="#FF6B5E"
-          strokeWidth={3}
-          opacity={0.9}
-          className="flash-rect"
-        />
-      )}
+        {flashCellKey && (
+          <polygon
+            points={diamondPoints(cellCenter(flashCellKey), 1)}
+            fill="none"
+            stroke="#FF6B5E"
+            strokeWidth={3}
+            opacity={0.9}
+            className="flash-rect"
+          />
+        )}
+      </g>
 
       <text x={480} y={545} className="trash-label">
         — filtered-out tokens are discarded here —
       </text>
 
       {machineEntries.map(({ id }) => (
-        <MachineSprite key={id} id={id} placed={placed} flash={flashNodeId === id} />
+        <MachineSprite key={id} id={id} placed={placed} flash={flashNodeId === id} angle={angle} />
       ))}
       {holdId &&
         (() => {
-          const c = fpCenterOf(holdId, placedDefs);
+          const c = fpCenterOf(holdId, placedDefs, angle);
           return (
             <circle
               cx={c.x}
@@ -739,7 +780,7 @@ export default function Board(props: BoardProps) {
         })()}
       {holdCell &&
         (() => {
-          const c = cellCenter(holdCell);
+          const c = cellCenter(holdCell, angle);
           return (
             <circle
               cx={c.x}
@@ -753,7 +794,7 @@ export default function Board(props: BoardProps) {
         })()}
       {props.stuckCell && (
         <g className="stuck-cell">
-          <polygon points={diamondPoints(cellCenter(props.stuckCell), 1)} />
+          <polygon points={diamondPoints(cellCenter(props.stuckCell, angle), 1, angle)} />
         </g>
       )}
       {(() => {
@@ -774,7 +815,7 @@ export default function Board(props: BoardProps) {
         return (
           <g className="port-markers">
             {[0, 1, 2].map((idx) => {
-              const pp = portPos(splitId, idx, placedDefs);
+              const pp = portPos(splitId, idx, placedDefs, angle);
               return (
                 <g key={idx} className={'port-marker' + (idx === activeIdx ? ' active' : ' dim')}>
                   <polygon points={diamondAt(pp.x, pp.y, 13, 7)} />
@@ -788,24 +829,24 @@ export default function Board(props: BoardProps) {
         );
       })()}
       {ghost && hoverCell && ghostPlaceable && (
-        <GhostSprite cell={hoverCell} type={ghost.type} />
+        <GhostSprite cell={hoverCell} type={ghost.type} angle={angle} />
       )}
 
       <g ref={props.tokenLayerRef} />
 
       {allIds.map((id) => (
-        <MachineLabel key={'lb-' + id} id={id} placed={placed} bufLabels={bufLabels} locked={lockedSet.has(id)} />
+        <MachineLabel key={'lb-' + id} id={id} placed={placed} bufLabels={bufLabels} locked={lockedSet.has(id)} angle={angle} />
       ))}
 
       {Object.keys(placed)
         .filter((id) => placed[id].type === 'split')
         .map((id) => (
-          <SplitExitDots key={'dots-' + id} id={id} def={placedDefs[id]} placed={placedDefs} />
+          <SplitExitDots key={'dots-' + id} id={id} def={placedDefs[id]} placed={placedDefs} angle={angle} />
         ))}
       {Object.keys(placed)
         .filter((id) => placed[id].type === 'split' && !lockedSet.has(id))
         .map((id) => (
-          <SplitRouteChip key={'chip-' + id} id={id} placed={placedDefs} onEdit={props.onEditRoute} />
+          <SplitRouteChip key={'chip-' + id} id={id} placed={placedDefs} onEdit={props.onEditRoute} angle={angle} />
         ))}
     </svg>
   );
@@ -825,10 +866,10 @@ function footprintCellsAtSafe(anchorKey: string, type: NodeDef['type']): string[
   return cells;
 }
 
-function GhostSprite({ cell, type }: { cell: string; type: NodeDef['type'] }) {
+function GhostSprite({ cell, type, angle }: { cell: string; type: NodeDef['type']; angle: number }) {
   const a = parseCell(cell);
   const fp = footprintOfType(type);
-  const c = isoCenter(a.c + (fp.w - 1) / 2, a.r + (fp.d - 1) / 2);
+  const c = isoCenter(a.c + (fp.w - 1) / 2, a.r + (fp.d - 1) / 2, angle);
   const S = 112 * (fp.w === 2 ? 1.25 : 1);
   return (
     <image x={c.x - S / 2} y={c.y + 12 - S} width={S} height={S} opacity={0.45} href={NODE_IMG[type]} />
@@ -839,27 +880,23 @@ function MachineSprite({
   id,
   placed,
   flash,
+  angle,
 }: {
   id: string;
   placed: Record<string, PlacedNode>;
   flash: boolean;
+  angle: number;
 }) {
   const n = placed[id] ?? null;
   const isFixedId = id === 'IN' || id === 'OUT' || id === 'A' || id === 'B';
   const sprite = id === 'IN' ? INPUT_IMG : isFixedId ? OUTPUT_IMG : NODE_IMG[n!.type];
-  const ctr = fpCenterOf(id, placed);
+  const ctr = fpCenterOf(id, placed, angle);
   const fp = footprintOf(id, placed);
   const S = 112 * (fp.w === 2 ? 1.25 : 1);
   return (
-    <g data-depth={machineDepth(id, placed)} {...(!isFixedId ? { 'data-mach': id } : {})}>
+    <g data-depth={machineDepth(id, placed, angle)} {...(!isFixedId ? { 'data-mach': id } : {})}>
       <g className={'node-inner' + (flash ? ' errflash' : '')}>
-        <ellipse
-          cx={ctr.x}
-          cy={ctr.y + 5}
-          rx={fp.w === 2 ? 46 : 30}
-          ry={fp.w === 2 ? 13 : 10}
-          className="node-shadow"
-        />
+        <polygon points={footprintQuad(id, placed, angle)} className="node-shadow" />
         <image x={ctr.x - S / 2} y={ctr.y + 12 - S} width={S} height={S} href={sprite} />
       </g>
     </g>
@@ -871,13 +908,15 @@ function MachineLabel({
   placed,
   bufLabels,
   locked,
+  angle,
 }: {
   id: string;
   placed: Record<string, PlacedNode>;
   bufLabels: Record<string, string>;
   locked?: boolean;
+  angle: number;
 }) {
-  const a = fpCenterOf(id, placed);
+  const a = fpCenterOf(id, placed, angle);
   const n = placed[id] ?? null;
   let title: string;
   let sub: string;
@@ -923,13 +962,6 @@ function MachineLabel({
   );
 }
 
-/** Unit screen direction each SPLIT port leaves by (matches the port ends in portPos). */
-const SPLIT_PORT_DIR: Record<number, { x: number; y: number }> = {
-  0: { x: 0.894, y: -0.447 },
-  1: { x: -0.894, y: 0.447 },
-  2: { x: 0.894, y: 0.447 },
-};
-
 /**
  * Small colored dots just past each SPLIT end, showing which token colors
  * currently leave by that port under the machine's effective routing — the
@@ -939,12 +971,15 @@ function SplitExitDots({
   id,
   def,
   placed,
+  angle,
 }: {
   id: string;
   def: NodeDef;
   placed: Record<string, NodeDef>;
+  angle: number;
 }) {
   const routing = splitRoutingOf(def);
+  const dirs = splitPortDirs(angle);
   const byPort: Record<number, ColorCode[]> = { 0: [], 1: [], 2: [] };
   (['R', 'B', 'G'] as ColorCode[]).forEach((c) => {
     byPort[routing.byColor[c] ?? routing.other].push(c);
@@ -954,8 +989,8 @@ function SplitExitDots({
       {([0, 1, 2] as const).map((idx) => {
         const colors = byPort[idx];
         if (!colors.length) return null;
-        const pp = portPos(id, idx, placed);
-        const d = SPLIT_PORT_DIR[idx];
+        const pp = portPos(id, idx, placed, angle);
+        const d = dirs[idx];
         return colors.map((c, i) => {
           const off = (i - (colors.length - 1) / 2) * 10.5;
           return (
@@ -983,12 +1018,14 @@ function SplitRouteChip({
   id,
   placed,
   onEdit,
+  angle,
 }: {
   id: string;
   placed: Record<string, NodeDef>;
   onEdit: (id: string) => void;
+  angle: number;
 }) {
-  const a = fpCenterOf(id, placed);
+  const a = fpCenterOf(id, placed, angle);
   return (
     <g
       className="route-chip"

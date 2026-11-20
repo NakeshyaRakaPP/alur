@@ -4,8 +4,8 @@ import Board from './Board';
 import { computeMetrics, isBetter, simulate, starsFor, starsForExpert } from '../engine';
 import type { Emit, Verdict } from '../engine';
 import { sfx } from '../audio/sfx';
-import { anchorOf, connPoints, portPos, railsUsed, screenToGridFloat } from '../geometry';
-import { BELT_IMG, COLOR_HEX, COLOR_NAME, COLOR_NAME_ID, NODE_IMG, TOKEN_IMG, nodeKey, nodeLabel, nodeName, splitRoutingOf } from '../nodeMeta';
+import { anchorOf, camBasis, connPoints, portPos, railsUsed, screenToGridFloat } from '../geometry';
+import { COLOR_HEX, COLOR_NAME, COLOR_NAME_ID, BELT_IMG, NODE_IMG, TOKEN_IMG, nodeKey, nodeLabel, nodeName, splitRoutingOf } from '../nodeMeta';
 import type { ColorCode, Conns, Level, Metrics, NodeDef, OutputId, PlacedNode, PortIdx, SplitRouting } from '../types';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -122,15 +122,18 @@ export default function GameScreen({
   const [showStamp, setShowStamp] = useState(false);
   const [lang, setLang] = useState<Lang>('en');
   const [hint, setHint] = useState<string>(
-    isFirst ? 'Start with step 1: click the FILTER machine in the rack.' : '',
+    isFirst ? 'Click the FILTER machine in the rack.' : '',
   );
   const [flashNodeId, setFlashNodeId] = useState<string | null>(null);
   const [confetti, setConfetti] = useState<Confetto[]>([]);
   const [ranOnce, setRanOnce] = useState(false);
   const [dragRails, setDragRails] = useState<number | null>(null);
   const [routeEditId, setRouteEditId] = useState<string | null>(null);
+  const [camAngle, setCamAngle] = useState(0);
 
   const runIdRef = useRef(0);
+  const angleRef = useRef(0);
+  const camTweenRef = useRef<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const tokenLayerRef = useRef<SVGGElement>(null);
   const tokensRef = useRef(new Map<number, TokenVis>());
@@ -144,6 +147,36 @@ export default function GameScreen({
       runIdRef.current++;
     };
   }, []);
+
+  // The camera starts at the classic view on every level / mode switch.
+  useEffect(() => {
+    if (camTweenRef.current) cancelAnimationFrame(camTweenRef.current);
+    angleRef.current = 0;
+    setCamAngle(0);
+  }, [level.id, expert]);
+
+  function applyAngle(deg: number) {
+    const norm = ((deg % 360) + 360) % 360;
+    angleRef.current = norm;
+    setCamAngle(norm);
+  }
+
+  function rotateBy(delta: number) {
+    if (running) return;
+    if (camTweenRef.current) cancelAnimationFrame(camTweenRef.current);
+    const from = angleRef.current;
+    const to = from + delta;
+    const t0 = performance.now();
+    const DUR = 260;
+    const step = (t: number) => {
+      const k = Math.min(1, (t - t0) / DUR);
+      const e = 1 - Math.pow(1 - k, 3);
+      applyAngle(from + (to - from) * e);
+      if (k < 1) camTweenRef.current = requestAnimationFrame(step);
+      else camTweenRef.current = null;
+    };
+    camTweenRef.current = requestAnimationFrame(step);
+  }
 
   function hintSay(txt: string) {
     if (!isFirst) return;
@@ -169,8 +202,10 @@ export default function GameScreen({
   function updateTokenDepth(vis: TokenVis) {
     const parent = vis.g.parentNode;
     if (!parent) return;
-    const f = screenToGridFloat(vis.x, vis.y);
-    const depth = f.c + f.r + 0.4;
+    const ang = angleRef.current;
+    const f = screenToGridFloat(vis.x, vis.y, ang);
+    const B = camBasis(ang);
+    const depth = (f.c * B.ay + f.r * B.by) / 21 + 0.4;
     vis.g.setAttribute('data-depth', String(depth));
     parent.removeChild(vis.g);
     let ref: ChildNode | null = null;
@@ -319,13 +354,13 @@ export default function GameScreen({
   const emit: Emit = async (e) => {
     switch (e.type) {
       case 'spawn': {
-        const p = anchorOf('IN');
+        const p = anchorOf('IN', angleRef.current);
         const vis = createToken(p.x, p.y, e.color);
         if (vis) tokensRef.current.set(e.token, vis);
         break;
       }
       case 'spawnAt': {
-        const p = anchorOf(e.nodeId);
+        const p = anchorOf(e.nodeId, angleRef.current);
         const vis = createToken(p.x, p.y, e.color);
         if (vis) {
           tokensRef.current.set(e.token, vis);
@@ -341,7 +376,7 @@ export default function GameScreen({
         const conn = connsRef.current[key];
         if (conn) {
           setBeltLive(key, true);
-          const ok = await moveAlong(vis, connPoints(e.fromId, conn));
+          const ok = await moveAlong(vis, connPoints(e.fromId, conn, angleRef.current));
           setBeltLive(key, false);
           if (!ok) break;
         }
@@ -359,7 +394,7 @@ export default function GameScreen({
         const conn = connsRef.current[key];
         if (conn) {
           setBeltLive(key, true);
-          const ok = await moveAlong(vis, connPoints(e.fromId, conn));
+          const ok = await moveAlong(vis, connPoints(e.fromId, conn, angleRef.current));
           setBeltLive(key, false);
           if (!ok) break;
         }
@@ -369,7 +404,7 @@ export default function GameScreen({
       case 'moveToPort': {
         const vis = tokensRef.current.get(e.token);
         if (vis) {
-          const fp = portPos(e.fromId, e.outIdx, placedRef.current);
+          const fp = portPos(e.fromId, e.outIdx, placedRef.current, angleRef.current);
           await moveVisual(vis, fp.x, fp.y);
           dropToken(e.token);
         }
@@ -378,7 +413,7 @@ export default function GameScreen({
       case 'trash': {
         const vis = tokensRef.current.get(e.token);
         if (vis) {
-          const p = anchorOf(e.atId);
+          const p = anchorOf(e.atId, angleRef.current);
           await moveVisual(vis, p.x, TRASH_Y, 0.35);
           vis.g.setAttribute('opacity', '0.3');
           window.setTimeout(() => vis.g.remove(), 80);
@@ -508,7 +543,7 @@ export default function GameScreen({
     setRanOnce(false);
     setDragRails(null);
     setRouteEditId(null);
-    setHint(isFirst ? 'Start with step 1: click the FILTER machine in the rack.' : '');
+    setHint(isFirst ? 'Click the FILTER machine in the rack.' : '');
   }
 
   function touchEdit() {
@@ -530,7 +565,7 @@ export default function GameScreen({
     setPlaced({ ...placed, [cell]: node });
     sfx.place();
     setSelTray(null);
-    hintSay('Placed. Now draw a belt: press and hold the INPUT machine until the ring fills, then drag across the grid to the left side of this machine.');
+    hintSay('Now hold INPUT until the ring fills, then drag a belt to this machine.');
     touchEdit();
   }
 
@@ -562,7 +597,7 @@ export default function GameScreen({
     setConns(next);
     if (kind === 'connect') {
       sfx.connect();
-      hintSay('Belt connected. Keep connecting until every flow reaches an OUTPUT, then press RUN.');
+      hintSay('Connect everything to an OUTPUT, then press RUN.');
     } else {
       sfx.remove();
     }
@@ -575,7 +610,7 @@ export default function GameScreen({
     setSelTray(selecting ? n.uid : null);
     if (selecting) sfx.select();
     else sfx.click();
-    hintSay(selecting ? 'Now click an empty cell on the board to place ' + nodeLabel(n).title + '.' : '');
+    hintSay(selecting ? 'Click an empty cell to place it.' : '');
   }
 
   // ---- SPLIT route editor ----
@@ -631,7 +666,7 @@ export default function GameScreen({
   const coachNow = coachDone.indexOf(false);
 
   return (
-    <div>
+    <div className="game-card">
       <div className="topbar">
         <button
           className="ghost"
@@ -712,8 +747,8 @@ export default function GameScreen({
         <div className="rack-row">
           <span className="tray-label">
             {expert
-              ? 'MACHINE RACK (EXPERT — limited stock) — click a machine, then click a cell on the board:'
-              : 'MACHINE RACK — click a machine, then click a cell on the board:'}
+              ? 'MACHINE RACK — EXPERT (limited stock):'
+              : 'MACHINE RACK:'}
           </span>
           <span className="rack-items">
             {trayState.map((n) => {
@@ -736,7 +771,7 @@ export default function GameScreen({
               );
             })}
             {!trayState.length && (
-              <span style={{ color: 'var(--ink-soft)', fontSize: 13 }}>(rack empty — every machine is placed)</span>
+              <span style={{ color: 'var(--ink-soft)', fontSize: 13 }}>(rack empty)</span>
             )}
           </span>
         </div>
@@ -756,9 +791,18 @@ export default function GameScreen({
           </span>
           {expert && (
             <span className="expert-note">
-              EXPERT — slim rail budget · limited rack · blocked cells · locked machines stay put
+              EXPERT — fewer rails · limited rack · blocked cells · locked machines
             </span>
           )}
+          <span className="cam-controls">
+            <button className="cam-btn" onClick={() => rotateBy(-45)} disabled={running} title="Rotate camera left">
+              ⟲
+            </button>
+            <span className="cam-label">CAMERA — drag the floor to spin</span>
+            <button className="cam-btn" onClick={() => rotateBy(45)} disabled={running} title="Rotate camera right">
+              ⟳
+            </button>
+          </span>
         </div>
 
         <div className="board-wrap">
@@ -777,8 +821,10 @@ export default function GameScreen({
             }
             svgRef={svgRef}
             tokenLayerRef={tokenLayerRef}
+            angle={camAngle}
+            onAngleChange={applyAngle}
             onPlace={placeAt}
-            onPlaceRejected={() => hintSay('Pick a machine from the rack first, then click a cell to place it.')}
+            onPlaceRejected={() => hintSay('Pick a machine from the rack first.')}
             onUnplace={unplace}
             onEditRoute={openRouteEditor}
             onConnsChange={handleConnsChange}
@@ -913,28 +959,6 @@ export default function GameScreen({
 
       {result && (result.win ? renderWin(result, expert ? expertRefNodes : level.par) : renderFail(result))}
 
-      <div className="howto">
-        <b>How to play:</b> 1) Click a machine in the rack, then click an empty cell on the board to place it —
-        wide machines (BUFFER, SORT, MERGE, and the OUTPUTs) stand on two cells. &nbsp;2) <b>Press and hold</b> a
-        machine on the board until the ring around it fills, then <b>drag</b> across the grid to draw a conveyor
-        belt, and release on the destination machine to connect it — every belt cell costs <b>1 rail</b>, and
-        the rail counter above the board shows your budget. Releasing a belt on an <b>empty cell</b> instead
-        leaves it <b>open-ended</b>: it stays laid and counted, and you can continue it later by pressing and
-        holding its end cell. Holding a machine that already has a belt redraws
-        that belt. Click a belt cell to remove that belt; click a placed machine to return it to the rack.
-        &nbsp;3) Press <b>RUN</b> and watch the tokens ride the belts and change inside the machines.
-        &nbsp;The <b>BUFFER</b> machine holds tokens until its batch is complete, then releases them all at once
-        as one pack. The <b>SORT</b> machine holds every token that enters and releases them grouped by color
-        once the incoming flow ends. The <b>MERGE</b> machine holds tokens per incoming belt and, whenever two
-        of its queues hold a token, consumes one from each and emits a single new token. The <b>SPLIT</b>{' '}
-        machine sends its named color up, a second named color to the side, and the rest down — tap the{' '}
-        <b>Route</b> chip on a placed SPLIT to decide for yourself which color leaves by which end (the
-        colored dots at its ends show the current map). &nbsp;A belt that glows
-        orange during RUN is carrying a token. After you win, compare your metrics (Nodes · Space · Steps) and
-        use <b>Replay Solution</b> to watch your system run again from the start. Finishing a level also unlocks
-        its <b>Expert</b> variant — a slimmer rail budget, a limited rack, blocked cells, and machines that
-        start locked in place.
-      </div>
     </div>
   );
 }
@@ -954,10 +978,8 @@ function renderWin(
         ))}
       </span>
       <br />
-      <b>The system runs.</b> Every token arrived exactly as targeted
-      {m.node <= par
-        ? ' — and you used the fewest possible machines.'
-        : ' — try solving it with fewer machines for full stars.'}
+      <b>It works.</b> All tokens on target
+      {m.node <= par ? ' — with the fewest machines.' : ' — try fewer machines for full stars.'}
       <br />
       <span className="metrics">
         Node: <b>{m.node}</b> · Space: <b>{m.ruang} cells</b> · Token steps: <b>{m.langkah}</b>
@@ -983,14 +1005,13 @@ function renderFail(r: { verdict: Verdict; placed: Record<string, NodeDef> }): R
   if (v.kind === 'stuck') {
     msg = v.cell ? (
       <>
-        A token stopped mid-flow. The <b>{COLOR_NAME[v.color]}</b> token rode the belt from{' '}
-        <b>{nodeName(v.at, r.placed)}</b> to its open end and stopped there — that belt does not reach a
-        machine yet.
+        The <b>{COLOR_NAME[v.color]}</b> token stopped at the open end of the belt from{' '}
+        <b>{nodeName(v.at, r.placed)}</b>. That belt ends in nowhere.
       </>
     ) : (
       <>
-        A token stopped mid-flow. The <b>{COLOR_NAME[v.color]}</b> token stopped at{' '}
-        <b>{nodeName(v.at, r.placed)}</b> because its output port is not connected.
+        The <b>{COLOR_NAME[v.color]}</b> token stopped at <b>{nodeName(v.at, r.placed)}</b>. Its way out is
+        not connected.
       </>
     );
   } else if (v.kind === 'leftover') {
@@ -999,34 +1020,30 @@ function renderFail(r: { verdict: Verdict; placed: Record<string, NodeDef> }): R
     msg =
       n && n.type === 'merge' ? (
         <>
-          <b>{v.count} token(s)</b> are still waiting inside <b>{title}</b> — no partner token arrived on
-          another belt, so they were never merged or released to an Output.
+          <b>{v.count} token(s)</b> stuck inside <b>{title}</b> — no partner came.
         </>
       ) : n && n.type === 'sort' ? (
         <>
-          <b>{v.count} token(s)</b> are still held inside <b>{title}</b> — they were never released to an
-          Output.
+          <b>{v.count} token(s)</b> stuck inside <b>{title}</b> — never sent to an Output.
         </>
       ) : (
         <>
-          <b>{v.count} token(s)</b> are still held inside <b>{title}</b> — their batch never completed, so they
-          were never released to an Output.
+          <b>{v.count} token(s)</b> stuck inside <b>{title}</b> — the pack never filled.
         </>
       );
   } else if (v.kind === 'package') {
     const label = v.output === 'OUT' ? 'Output' : 'Output ' + v.output;
     msg = (
       <>
-        <b>{label}</b> only accepts <b>packs of {v.size}</b> released by BUFFER. A token arrived on its own, or
-        a pack was incomplete.
+        <b>{label}</b> takes <b>packs of {v.size}</b> only. Something arrived unpacked.
       </>
     );
   } else if (v.kind === 'mismatch') {
     const label = v.output === 'OUT' ? 'Output' : 'Output ' + v.output;
     msg = (
       <>
-        <b>{label}</b> received: {v.got.length ? v.got.map((c) => COLOR_NAME[c]).join(', ') : '(empty)'}.
-        Required: {v.want.map((c) => COLOR_NAME[c]).join(', ')}.
+        <b>{label}</b> got: {v.got.length ? v.got.map((c) => COLOR_NAME[c]).join(', ') : '(nothing)'}.
+        Need: {v.want.map((c) => COLOR_NAME[c]).join(', ')}.
       </>
     );
   }

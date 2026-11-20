@@ -2,7 +2,7 @@ import type { ColorCode, NodeDef, NodeType, PortIdx, SplitRouting } from './type
 
 /** Asset base: resolved against the deployment base so the same build works
  *  at a domain root or under any subpath (GitHub Pages, portfolio embed). */
-const ART = import.meta.env.BASE_URL + 'art/iso/';
+const ART = (import.meta.env?.BASE_URL ?? '/') + 'art/iso/';
 
 export const LOGO_IMG = ART + 'logo_alur.png';
 

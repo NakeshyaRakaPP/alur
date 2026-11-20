@@ -73,10 +73,7 @@ export default function App() {
     <div className="wrap">
       <header>
         <img className="logo" src={LOGO_IMG} alt="ALUR" />
-        <div className="tag">
-          A system-building puzzle — place machines, connect the pipes, run the flow, and watch your system
-          work.
-        </div>
+        <div className="tag">Place machines. Connect belts. Run the flow.</div>
         {DEMO && <div className="proof-badge">DEMO VERSION</div>}
         <button
           className="mute-btn"
@@ -150,8 +147,7 @@ export default function App() {
       )}
 
       <footer className="foot">
-        ALUR — one game, {LEVELS.length} levels, four chapters, plus an Expert variant of every level. Every
-        finished level is one shipped system.
+        ALUR — {LEVELS.length} levels, four chapters, plus an Expert variant of every level.
       </footer>
     </div>
   );
@@ -165,10 +161,9 @@ function GateScreen({ progress, onHome }: { progress: ProgressMap; onHome: () =>
     <div className="gate-box">
       <div className="gate-stamp">CHAPTER 1 COMPLETE</div>
       <p>
-        You have finished Chapter 1 — Basic Flow in this demo version ({done} of {ch1.length} levels, {stars}{' '}
-        stars). Chapter 2 — Split &amp; Merge and Chapter 3 — Real Systems are available in the full ALUR app.
+        You finished Chapter 1 in this demo ({done} of {ch1.length} levels, {stars} stars). The rest is in
+        the full app.
       </p>
-      <p className="gate-next">Chapter 1 complete — continue in the app to unlock the next chapters.</p>
       <button
         className="run"
         onClick={() => {

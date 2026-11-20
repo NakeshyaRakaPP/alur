@@ -21,33 +21,123 @@ export function parseCell(k: string): { c: number; r: number } {
   return { c: parseInt(p[0], 10), r: parseInt(p[1], 10) };
 }
 
-// ---- Isometric projection (2:1 tiles) ----
+// ---- Camera projection (2:1 iso, free azimuth) ----
+// The board is an isometric grid seen by a camera that orbits the vertical
+// axis: angle 0 is the classic view (+c runs down-right, +r down-left) and
+// any other angle rotates both screen axes around the board's centre, so
+// angle 0 keeps the exact classic framing. Machine sprites stay upright
+// billboards — only their anchor points travel with the projection.
 export const ISO_TW = 84;
 export const ISO_TH = 42;
 export const ISO_OX = 375;
 export const ISO_OY = 130;
 
-export function isoCenter(c: number, r: number): Point {
-  return { x: ISO_OX + (c - r) * (ISO_TW / 2), y: ISO_OY + (c + r) * (ISO_TH / 2) };
+export interface CamBasis {
+  /** Screen step per +1 grid c. */
+  ax: number;
+  ay: number;
+  /** Screen step per +1 grid r. */
+  bx: number;
+  by: number;
+  /** Screen position of grid (0, 0). */
+  ox: number;
+  oy: number;
 }
 
-export function screenToGridFloat(x: number, y: number): { c: number; r: number } {
-  const a = (x - ISO_OX) / (ISO_TW / 2);
-  const b = (y - ISO_OY) / (ISO_TH / 2);
-  return { c: (a + b) / 2, r: (b - a) / 2 };
+function rawBasis(angleDeg: number): { ax: number; ay: number; bx: number; by: number } {
+  const t = ((angleDeg % 360) * Math.PI) / 180;
+  const cos = Math.cos(t);
+  const sin = Math.sin(t);
+  return {
+    ax: (ISO_TW / 2) * (cos - sin),
+    ay: (ISO_TH / 2) * (cos + sin),
+    bx: (ISO_TW / 2) * (-sin - cos),
+    by: (ISO_TH / 2) * (cos - sin),
+  };
 }
 
-export function pickCell(x: number, y: number): string | null {
-  const f = screenToGridFloat(x, y);
+function boardCenter(b: { ax: number; ay: number; bx: number; by: number }): { x: number; y: number } {
+  const corners: [number, number][] = [
+    [-0.5, -0.5],
+    [COLS - 0.5, -0.5],
+    [-0.5, ROWS - 0.5],
+    [COLS - 0.5, ROWS - 0.5],
+  ];
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const [c, r] of corners) {
+    const x = c * b.ax + r * b.bx;
+    const y = c * b.ay + r * b.by;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+}
+
+export function camBasis(angleDeg: number): CamBasis {
+  const b = rawBasis(angleDeg);
+  const c = boardCenter(b);
+  const c0 = boardCenter(rawBasis(0));
+  return { ...b, ox: ISO_OX + (c0.x - c.x), oy: ISO_OY + (c0.y - c.y) };
+}
+
+/**
+ * The affine warp that carries the whole angle-0 board painting (floor,
+ * belt tiles — pixel art drawn for the classic view) into the current
+ * camera view: p' = O(θ) + M · (p − O(0)), with M sending the classic
+ * basis vectors to the rotated ones. Applied as one SVG group transform,
+ * it keeps the pixel tileset pixel-true at any azimuth while billboards
+ * (machine sprites, tokens, labels) stay outside the group, unwarped.
+ */
+export function boardWarp(angleDeg: number): { m11: number; m12: number; m21: number; m22: number; ox: number; oy: number } {
+  const B = camBasis(angleDeg);
+  const b0 = rawBasis(0);
+  const det = b0.ax * b0.by - b0.ay * b0.bx;
+  // M = [aθ bθ] · [a0 b0]^-1
+  const m11 = (B.ax * b0.by - B.bx * b0.ay) / det;
+  const m12 = (B.bx * b0.ax - B.ax * b0.bx) / det;
+  const m21 = (B.ay * b0.by - B.by * b0.ay) / det;
+  const m22 = (B.by * b0.ax - B.ay * b0.bx) / det;
+  return { m11, m12, m21, m22, ox: B.ox, oy: B.oy };
+}
+
+export function boardWarpTransform(angleDeg: number): string {
+  const w = boardWarp(angleDeg);
+  return (
+    `translate(${w.ox} ${w.oy}) ` +
+    `matrix(${w.m11} ${w.m21} ${w.m12} ${w.m22} 0 0) ` +
+    `translate(${-ISO_OX} ${-ISO_OY})`
+  );
+}
+
+export function isoCenter(c: number, r: number, angleDeg = 0): Point {
+  const B = camBasis(angleDeg);
+  return { x: B.ox + c * B.ax + r * B.bx, y: B.oy + c * B.ay + r * B.by };
+}
+
+export function screenToGridFloat(x: number, y: number, angleDeg = 0): { c: number; r: number } {
+  const B = camBasis(angleDeg);
+  const dx = x - B.ox;
+  const dy = y - B.oy;
+  const det = B.ax * B.by - B.ay * B.bx;
+  return { c: (dx * B.by - dy * B.bx) / det, r: (B.ax * dy - B.ay * dx) / det };
+}
+
+export function pickCell(x: number, y: number, angleDeg = 0): string | null {
+  const f = screenToGridFloat(x, y, angleDeg);
   const c = Math.round(f.c);
   const r = Math.round(f.r);
   if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return null;
   return cellKey(c, r);
 }
 
-export function cellCenter(k: string): Point {
+export function cellCenter(k: string, angleDeg = 0): Point {
   const p = parseCell(k);
-  return isoCenter(p.c, p.r);
+  return isoCenter(p.c, p.r, angleDeg);
 }
 
 export function cellsAdjacent(a: string, b: string): boolean {
@@ -61,19 +151,53 @@ export function leftCellOf(k: string): string {
   return cellKey(p.c - 1, p.r);
 }
 
-export function depthOfCell(k: string): number {
+export function depthOfCell(k: string, angleDeg = 0): number {
   const p = parseCell(k);
-  return p.c + p.r;
+  const B = camBasis(angleDeg);
+  return (p.c * B.ay + p.r * B.by) / (ISO_TH / 2);
 }
 
 export function diamondAt(cx: number, cy: number, hw: number, hh: number): string {
   return cx + ',' + (cy - hh) + ' ' + (cx + hw) + ',' + cy + ' ' + cx + ',' + (cy + hh) + ' ' + (cx - hw) + ',' + cy;
 }
 
-export function diamondPoints(c: Point, inset: number): string {
-  const hw = ISO_TW / 2 - (inset || 0);
-  const hh = ISO_TH / 2 - (inset || 0) / 2;
-  return diamondAt(c.x, c.y, hw, hh);
+/** The four corners of a grid cell around its centre, in the current camera view (top, right, bottom, left at angle 0). */
+export function diamondPoints(c: Point, inset: number, angleDeg = 0): string {
+  const B = camBasis(angleDeg);
+  const f = 1 - (inset || 0) / (ISO_TW / 2);
+  const ax = (B.ax / 2) * f;
+  const ay = (B.ay / 2) * f;
+  const bx = (B.bx / 2) * f;
+  const by = (B.by / 2) * f;
+  const pts: [number, number][] = [
+    [c.x - ax - bx, c.y - ay - by],
+    [c.x + ax - bx, c.y + ay - by],
+    [c.x + ax + bx, c.y + ay + by],
+    [c.x - ax + bx, c.y - ay + by],
+  ];
+  return pts.map(([x, y]) => x + ',' + y).join(' ');
+}
+
+/** Projected outline of a machine's whole footprint (used as its ground shadow): the four footprint corners, slightly inset. */
+export function footprintQuad(id: string, placed: Record<string, NodeDef>, angleDeg = 0, insetCells = 0.07): string {
+  const a = parseCell(machineCell(id));
+  const fp = footprintOf(id, placed);
+  const c0 = a.c - 0.5 + insetCells;
+  const r0 = a.r - 0.5 + insetCells;
+  const c1 = a.c + fp.w - 0.5 - insetCells;
+  const r1 = a.r + fp.d - 0.5 - insetCells;
+  const corners: [number, number][] = [
+    [c0, r0],
+    [c1, r0],
+    [c1, r1],
+    [c0, r1],
+  ];
+  return corners
+    .map(([c, r]) => {
+      const p = isoCenter(c, r, angleDeg);
+      return p.x + ',' + p.y;
+    })
+    .join(' ');
 }
 
 // ---- Fixed machines (INPUT / OUTPUT anchors) ----
@@ -93,8 +217,8 @@ export function machineCell(id: string): string {
   return isFixed(id) ? FIXED[id] : id;
 }
 
-export function anchorOf(id: string): Point {
-  return cellCenter(machineCell(id));
+export function anchorOf(id: string, angleDeg = 0): Point {
+  return cellCenter(machineCell(id), angleDeg);
 }
 
 // ---- Footprints (in grid cells, cols x rows; id = anchor / top-left cell) ----
@@ -141,16 +265,17 @@ export function footprintCells(id: string, placed: Record<string, NodeDef>): str
   return footprintCellsAt(machineCell(id), t ?? 'filter');
 }
 
-export function fpCenterOf(id: string, placed: Record<string, NodeDef>): Point {
+export function fpCenterOf(id: string, placed: Record<string, NodeDef>, angleDeg = 0): Point {
   const a = parseCell(machineCell(id));
   const fp = footprintOf(id, placed);
-  return isoCenter(a.c + (fp.w - 1) / 2, a.r + (fp.d - 1) / 2);
+  return isoCenter(a.c + (fp.w - 1) / 2, a.r + (fp.d - 1) / 2, angleDeg);
 }
 
-export function machineDepth(id: string, placed: Record<string, NodeDef>): number {
+export function machineDepth(id: string, placed: Record<string, NodeDef>, angleDeg = 0): number {
   const a = parseCell(machineCell(id));
   const fp = footprintOf(id, placed);
-  return a.c + (fp.w - 1) + a.r + (fp.d - 1);
+  const B = camBasis(angleDeg);
+  return ((a.c + fp.w - 1) * B.ay + (a.r + fp.d - 1) * B.by) / (ISO_TH / 2);
 }
 
 export function machineAtCell(cell: string, placed: Record<string, NodeDef>): string | null {
@@ -168,14 +293,14 @@ export function machineAtCell(cell: string, placed: Record<string, NodeDef>): st
  * MERGE) can be drawn from whichever half the player actually grabbed:
  * holding the far tile works even when the anchor tile's exits are crowded.
  */
-export function heldTileOf(cells: string[], pt: Point): string {
-  const f = screenToGridFloat(pt.x, pt.y);
+export function heldTileOf(cells: string[], pt: Point, angleDeg = 0): string {
+  const f = screenToGridFloat(pt.x, pt.y, angleDeg);
   const key = cellKey(Math.round(f.c), Math.round(f.r));
   if (cells.indexOf(key) >= 0) return key;
   let best = cells[0];
   let bestD = Infinity;
   for (const c of cells) {
-    const ctr = cellCenter(c);
+    const ctr = cellCenter(c, angleDeg);
     const d = (ctr.x - pt.x) * (ctr.x - pt.x) + (ctr.y - pt.y) * (ctr.y - pt.y);
     if (d < bestD) {
       bestD = d;
@@ -205,41 +330,52 @@ export function cellPlaceable(
 }
 
 // ---- Ports (screen positions, for the port markers and stuck-token anim) ----
-// The SPLIT sprite is drawn with three belt ends: up-right (grid north),
-// down-left (grid south) and down-right (grid east). The port markers and
-// stuck-token endpoints sit on those ends: port 0 = up (north end),
-// port 1 = down (south end), port 2 = side (east end).
-export function portPos(id: string, idx: number, placed: Record<string, NodeDef>): Point {
-  const a = anchorOf(id);
+// The SPLIT sprite is a billboard: it never rotates, but the belt ends its
+// ports feed DO travel with the camera. Port 0 leaves by the grid-north
+// step, port 1 by grid-south, port 2 by grid-east — so each port's screen
+// position and direction are the camera-projected grid steps: 40px from
+// the anchor along the step's unit vector.
+function unitOf(x: number, y: number): Point {
+  const l = Math.hypot(x, y) || 1;
+  return { x: x / l, y: y / l };
+}
+
+/** Unit screen directions of the SPLIT out ports in the current view: 0 = grid north step, 1 = grid south, 2 = grid east. */
+export function splitPortDirs(angleDeg = 0): [Point, Point, Point] {
+  const B = camBasis(angleDeg);
+  const ua = unitOf(B.ax, B.ay);
+  const ub = unitOf(B.bx, B.by);
+  return [{ x: -ub.x, y: -ub.y }, ub, ua];
+}
+
+export function portPos(id: string, idx: number, placed: Record<string, NodeDef>, angleDeg = 0): Point {
+  const a = anchorOf(id, angleDeg);
   const n = placed[id];
   if (n && n.type === 'split') {
-    if (idx === 0) return { x: a.x + 36, y: a.y - 18 };
-    if (idx === 2) return { x: a.x + 36, y: a.y + 18 };
-    return { x: a.x - 36, y: a.y + 18 };
+    const d = splitPortDirs(angleDeg)[idx];
+    return { x: a.x + d.x * 40, y: a.y + d.y * 40 };
   }
   const ap = parseCell(machineCell(id));
   const fp = footprintOf(id, placed);
-  const rc = isoCenter(ap.c + fp.w - 1, ap.r);
+  const rc = isoCenter(ap.c + fp.w - 1, ap.r, angleDeg);
   return { x: rc.x + 38, y: rc.y };
 }
 
-export function inPortPos(id: string): Point {
-  const a = anchorOf(id);
+export function inPortPos(id: string, angleDeg = 0): Point {
+  const a = anchorOf(id, angleDeg);
   return { x: a.x - 38, y: a.y };
 }
 
 /**
- * Screen direction of each SPLIT out port, as the angle (degrees, atan2
+ * Screen direction of each SPLIT out port, as angles (degrees, atan2
  * convention: 0 = east on screen, positive = clockwise/downward) of the
- * grid step that leaves by that end. Port 0 exits north (up-right on
- * screen), port 1 exits south (down-left), port 2 exits east (down-right) —
- * the three belt ends the SPLIT sprite is drawn with.
+ * grid step that leaves by that port, in the current camera view.
  */
-export const SPLIT_PORT_ANGLES: [number, number, number] = [
-  (Math.atan2(-21, 42) * 180) / Math.PI,
-  (Math.atan2(21, -42) * 180) / Math.PI,
-  (Math.atan2(21, 42) * 180) / Math.PI,
-];
+export function splitPortAngles(angleDeg = 0): [number, number, number] {
+  return splitPortDirs(angleDeg).map((d) => (Math.atan2(d.y, d.x) * 180) / Math.PI) as [number, number, number];
+}
+
+export const SPLIT_PORT_ANGLES: [number, number, number] = splitPortAngles(0);
 
 function angDist(a: number, b: number): number {
   const d = Math.abs(a - b) % 360;
@@ -264,8 +400,9 @@ export function pickSplitPort3(
   angleDeg: number,
   distPx: number,
   current: number,
+  portAngles: [number, number, number] = SPLIT_PORT_ANGLES,
 ): 0 | 1 | 2 {
-  const dists = SPLIT_PORT_ANGLES.map((a) => angDist(angleDeg, a));
+  const dists = portAngles.map((a) => angDist(angleDeg, a));
   const nearest = dists.indexOf(Math.min(...dists)) as 0 | 1 | 2;
   if (distPx >= 14 && dists[nearest] <= 40) {
     if (!has[nearest]) return nearest;
@@ -298,9 +435,10 @@ export function splitLivePort3(
   angleDeg: number,
   distPx: number,
   current: number,
+  portAngles: [number, number, number] = SPLIT_PORT_ANGLES,
 ): 0 | 1 | 2 {
   if (pathLength > 0) return (current >= 0 && current <= 2 ? current : 0) as 0 | 1 | 2;
-  return pickSplitPort3(has, angleDeg, distPx, current);
+  return pickSplitPort3(has, angleDeg, distPx, current, portAngles);
 }
 
 /**
@@ -357,15 +495,15 @@ export function edgeRefCell(cells: string[], cell: string, fallback: string): st
 }
 
 /** Polyline a token rides for one connection: machine anchor, belt cells (lifted), destination anchor. An open-ended trail (to = null) ends on its last belt cell instead. */
-export function connPoints(fromId: string, conn: BeltConn): { x: number; y: number; l: number }[] {
-  const pa = anchorOf(fromId);
+export function connPoints(fromId: string, conn: BeltConn, angleDeg = 0): { x: number; y: number; l: number }[] {
+  const pa = anchorOf(fromId, angleDeg);
   const pts: { x: number; y: number; l: number }[] = [{ x: pa.x, y: pa.y, l: 0 }];
   conn.path.forEach((cell) => {
-    const cc = cellCenter(cell);
+    const cc = cellCenter(cell, angleDeg);
     pts.push({ x: cc.x, y: cc.y, l: BELT_LIFT });
   });
   if (conn.to !== null) {
-    const pb = anchorOf(conn.to);
+    const pb = anchorOf(conn.to, angleDeg);
     pts.push({ x: pb.x, y: pb.y, l: 0 });
   }
   return pts;
@@ -534,6 +672,36 @@ export function findBeltPath(opts: {
   }
   path.reverse();
   return { path, overBudget: path.length > budget };
+}
+
+/**
+ * Route a belt OUT of a machine. The belt may leave the footprint by
+ * whichever edge is shortest — a 2-tile machine's own body never forces a
+ * detour, because the token is still "inside" the machine until it steps
+ * onto the first belt cell. The tile the player actually held keeps
+ * priority whenever its route is no longer than the footprint-wide best,
+ * so exits still follow the held half when both work equally well.
+ */
+export function findMachineExitPath(opts: {
+  /** Footprint cells of the source machine. */
+  srcCells: string[];
+  /** The footprint cell the player held to start this drag, when known. */
+  heldTile?: string | null;
+  /** Acceptable final belt cells (free cells, e.g. the cursor cell or a target machine's doorstep cells). */
+  goalCells: string[];
+  /** When the belt runs straight into a machine: if a source cell already touches one of these cells, an empty path is the valid route. */
+  directCells?: string[];
+  /** Cells the belt may never enter (machine footprints, other belts, obstacles, off-board is implicit). */
+  blocked: Set<string>;
+  /** Remaining rails the route may use; may be Infinity. */
+  budget: number;
+}): BeltPathResult {
+  const wide = findBeltPath(opts);
+  const held = opts.heldTile;
+  if (!held || opts.srcCells.length < 2 || !opts.srcCells.includes(held)) return wide;
+  const fromHeld = findBeltPath({ ...opts, srcCells: [held] });
+  if (fromHeld.path && wide.path && fromHeld.path.length <= wide.path.length) return fromHeld;
+  return wide;
 }
 
 export interface TrailExtensionResult {

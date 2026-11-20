@@ -180,11 +180,21 @@ header img.logo {
 }
 
 /* ---------- Game screen ---------- */
+/* One single container for the whole game screen: topbar, brief, rack,
+   board, controls and results are sections of this card, separated by
+   hairlines instead of stacked boxes. */
+.game-card {
+  background: #1b1e24;
+  border: 3px solid var(--line);
+  box-shadow: var(--shadow);
+  margin-top: 14px;
+  padding: 14px 16px 16px;
+}
 .topbar {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 14px 0 0;
+  margin: 0;
 }
 .topbar-chapter {
   color: var(--ink-soft);
@@ -193,11 +203,9 @@ header img.logo {
   letter-spacing: 1px;
 }
 .brief {
-  background: var(--paper);
-  border: 3px solid var(--line);
-  padding: 16px 18px;
-  margin: 16px 0 0;
-  box-shadow: var(--shadow);
+  padding: 0 0 14px;
+  margin: 14px 0 0;
+  border-bottom: 2px solid #2b2f36;
 }
 .brief h2 {
   font-size: 18px;
@@ -271,13 +279,10 @@ button.ghost.translate-btn {
   }
 }
 
-/* ---------- Sandbox card: rack + rails + board in one card ---------- */
+/* ---------- Sandbox section: rack + rails + board inside the game card ---------- */
 .sandbox-card {
-  background: #1b1e24;
-  border: 3px solid var(--line);
-  box-shadow: var(--shadow);
-  margin-top: 16px;
-  padding: 12px 14px 10px;
+  margin-top: 0;
+  padding: 14px 0 0;
 }
 .rack-row {
   display: flex;
@@ -343,7 +348,40 @@ button.ghost.translate-btn {
 .sandbox-meta {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
   margin: 2px 0 6px;
+}
+.cam-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: 14px;
+}
+.cam-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--ink-soft);
+}
+button.cam-btn {
+  background: #22262d;
+  color: var(--ink-soft);
+  border: 2px solid var(--line);
+  width: 30px;
+  height: 30px;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  font-family: inherit;
+}
+button.cam-btn:hover:not(:disabled) {
+  color: var(--ink);
+}
+button.cam-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 .rails {
   display: inline-flex;
@@ -384,7 +422,9 @@ button.ghost.translate-btn {
   display: flex;
   gap: 12px;
   align-items: center;
-  margin-top: 16px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 2px solid #2b2f36;
   flex-wrap: wrap;
 }
 button.run {
@@ -496,18 +536,6 @@ button.ghost:hover {
   display: flex;
   align-items: center;
   gap: 5px;
-}
-.howto {
-  margin-top: 18px;
-  color: var(--ink-soft);
-  font-size: 13px;
-  line-height: 1.75;
-  background: var(--paper);
-  border: 2px solid #3a4048;
-  padding: 13px 17px;
-}
-.howto b {
-  color: var(--ink);
 }
 
 /* ---------- SVG board ---------- */
@@ -662,6 +690,10 @@ button.ghost:hover {
 }
 .belt-conn.live image {
   filter: drop-shadow(0 0 6px rgba(255, 140, 26, 0.9)) drop-shadow(0 0 14px rgba(255, 140, 26, 0.5));
+}
+/* Belt tiles are warped by the camera transform; keep them crunchy. */
+#board image {
+  image-rendering: pixelated;
 }
 .trash-label {
   fill: #767d87;
@@ -999,4 +1031,31 @@ button.ghost:hover {
 .route-seg button.active {
   background: var(--accent);
   color: #1d1305;
+}
+
+/* ---------- Small screens: one card, tighter frame ---------- */
+@media (max-width: 640px) {
+  body {
+    padding: 12px 8px 24px;
+  }
+  header img.logo {
+    height: 64px;
+  }
+  .game-card {
+    margin-top: 10px;
+    padding: 10px 10px 12px;
+  }
+  .brief {
+    margin-top: 10px;
+    padding-bottom: 10px;
+  }
+  .brief h2 {
+    font-size: 16px;
+  }
+  .sandbox-card {
+    padding-top: 10px;
+  }
+  button.run {
+    padding: 11px 24px;
+  }
 }
