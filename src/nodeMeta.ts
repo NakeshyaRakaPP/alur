@@ -1,5 +1,11 @@
 import type { ColorCode, NodeDef, NodeType, PortIdx, SplitRouting } from './types';
 
+/** Asset base: resolved against the deployment base so the same build works
+ *  at a domain root or under any subpath (GitHub Pages, portfolio embed). */
+const ART = import.meta.env.BASE_URL + 'art/iso/';
+
+export const LOGO_IMG = ART + 'logo_alur.png';
+
 export const COLOR_HEX: Record<ColorCode, string> = {
   R: '#E5534B',
   B: '#2E6FDB',
@@ -19,29 +25,29 @@ export const COLOR_NAME_ID: Record<ColorCode, string> = {
 };
 
 export const NODE_IMG: Record<NodeType, string> = {
-  filter: '/art/iso/node_filter.png',
-  transform: '/art/iso/node_change.png',
-  split: '/art/iso/node_split.png',
-  tahan: '/art/iso/node_buffer.png',
-  sort: '/art/iso/node_sort.png',
-  merge: '/art/iso/node_merge.png',
+  filter: ART + 'node_filter.png',
+  transform: ART + 'node_change.png',
+  split: ART + 'node_split.png',
+  tahan: ART + 'node_buffer.png',
+  sort: ART + 'node_sort.png',
+  merge: ART + 'node_merge.png',
 };
 
-export const INPUT_IMG = '/art/iso/node_input.png';
-export const OUTPUT_IMG = '/art/iso/node_output.png';
+export const INPUT_IMG = ART + 'node_input.png';
+export const OUTPUT_IMG = ART + 'node_output.png';
 
 export const TOKEN_IMG: Record<ColorCode, string> = {
-  R: '/art/iso/token_red.png',
-  B: '/art/iso/token_blue.png',
-  G: '/art/iso/token_green.png',
+  R: ART + 'token_red.png',
+  B: ART + 'token_blue.png',
+  G: ART + 'token_green.png',
 };
 
 const BELT_KEYS = ['ew', 'ns', 'es', 'sw', 'wn', 'ne', 'end_e', 'end_w', 'end_n', 'end_s'] as const;
 
 /** Belt tileset (belt4): steel while idle, orange "live" set while a token rides the connection. */
 export const BELT_IMG: { steel: Record<string, string>; live: Record<string, string> } = {
-  steel: Object.fromEntries(BELT_KEYS.map((k) => [k, '/art/iso/belt/belt_' + k + '.png'])),
-  live: Object.fromEntries(BELT_KEYS.map((k) => [k, '/art/iso/belt/belt_live_' + k + '.png'])),
+  steel: Object.fromEntries(BELT_KEYS.map((k) => [k, ART + 'belt/belt_' + k + '.png'])),
+  live: Object.fromEntries(BELT_KEYS.map((k) => [k, ART + 'belt/belt_live_' + k + '.png'])),
 };
 
 export function nodeLabel(n: NodeDef): { title: string; sub: string } {

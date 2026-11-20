@@ -3,6 +3,7 @@ import GameScreen from './components/GameScreen';
 import type { GameMode } from './components/GameScreen';
 import HomeScreen from './components/HomeScreen';
 import { isBetter } from './engine';
+import { LOGO_IMG } from './nodeMeta';
 import { isMuted, setMuted, sfx } from './audio/sfx';
 import { LEVELS, levelById, levelsOfChapter, nextLevel } from './levels';
 import { loadExpertProgress, loadProgress, saveExpertProgress, saveProgress } from './progress';
@@ -71,7 +72,7 @@ export default function App() {
   return (
     <div className="wrap">
       <header>
-        <img className="logo" src="/art/iso/logo_alur.png" alt="ALUR" />
+        <img className="logo" src={LOGO_IMG} alt="ALUR" />
         <div className="tag">
           A system-building puzzle — place machines, connect the pipes, run the flow, and watch your system
           work.

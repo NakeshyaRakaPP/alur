@@ -40,6 +40,6 @@ Script ini menjalankan solusi tersimpan setiap level lewat engine simulasi yang 
 
 Hasil `npm run build` adalah situs statis di `dist/`.
 
-- **Vercel** (disarankan): import repo, preset Vite, build command `npm run build`, output `dist`. Path aset absolut dari root domain (`/art/...`), jadi deploy di root domain langsung jalan.
-- **GitHub Pages** (project site `username.github.io/alur/`): perlu `base: '/alur/'` di `vite.config.ts` — jangan deploy ke subpath tanpa mengubah base.
+- **Vercel** (disarankan): import repo, preset Vite, build command `npm run build`, output `dist`. Build memakai base relatif, jadi langsung jalan.
+- **GitHub Pages**: workflow `.github/workflows/deploy.yml` sudah termasuk — aktifkan Pages dengan sumber "GitHub Actions" di Settings repo, lalu push. Build memakai base relatif (`./`), jadi situs jalan di subpath mana pun tanpa perubahan kode.
 - `scripts/verify-levels.ts` — pengujian headless untuk seluruh level.
