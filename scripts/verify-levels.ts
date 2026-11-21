@@ -404,6 +404,37 @@ async function main() {
     await checkWin(level, sol.placements, built, level.id);
   }
 
+  // ---- 1b) Solusi alternatif: setiap level wajib punya cara menang kedua
+  // yang beda arsitektur (multiset mesin beda), di dalam rak dan anggaran
+  // yang sama — bukti levelnya bukan satu-solusi. ----
+  console.log('\n== Solusi alternatif ==');
+  for (const level of LEVELS) {
+    const alt = level.altSolution;
+    if (!alt) {
+      fail(level.id + ': altSolution tidak ada');
+      continue;
+    }
+    checkTrayCovers(level.id + ' alt', level.tray, alt.placements);
+    const { rails, built } = checkGrid({
+      label: level.id + ' alt',
+      outputs: level.outputs,
+      placements: alt.placements,
+      conns: alt.connections,
+      railLimit: level.railLimit,
+      obstacles: new Set(),
+    });
+    await checkWin(level, alt.placements, built, level.id + ' alt');
+    const a = multiset(Object.values(level.solution.placements));
+    const b = multiset(Object.values(alt.placements));
+    const sameSet =
+      a.size === b.size && [...a.entries()].every(([k, v]) => b.get(k) === v);
+    if (sameSet) fail(level.id + ': altSolution memakai multiset mesin yang sama dengan solusi utama');
+    console.log(
+      '  OK — ' + level.id + ': alt menang dengan ' + Object.keys(alt.placements).length +
+        ' mesin, ' + rails + ' rail (utama: ' + Object.keys(level.solution.placements).length + ' mesin).',
+    );
+  }
+
   // ---- 2) Fokus MERGE (uji engine sintetis) ----
   console.log('\n== Fokus MERGE ==');
   const mergeLayout = {

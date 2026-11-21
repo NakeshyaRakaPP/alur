@@ -24,6 +24,7 @@ import {
   findMachineExitPath,
   findTrailExtension,
   footprintCells,
+  footprintCellsAt,
   footprintOf,
   footprintOfType,
   footprintQuad,
@@ -37,6 +38,8 @@ import {
   pickCell,
   pickSplitPort3,
   portPos,
+  rerouteMovedConns,
+  spliceConns,
   splitLivePort3,
   splitPortAngles,
   splitPortDirs,
@@ -68,9 +71,11 @@ export interface BoardProps {
   angle: number;
   /** Reports camera rotations from floor drags; the owner keeps the angle so the token layer shares it. */
   onAngleChange: (deg: number) => void;
-  onPlace: (cell: string) => void;
+  onPlace: (cell: string, splice: Conns | null) => void;
   onPlaceRejected: (cell: string) => void;
   onUnplace: (id: string) => void;
+  /** Commits a machine move (hold menu → Move): new anchor + rebuilt conns. */
+  onMoveNode: (id: string, newAnchor: string, next: Conns) => void;
   /** Opens the Route editor for a placed SPLIT (chip tap). Locked splits get no chip. */
   onEditRoute: (id: string) => void;
   onConnsChange: (next: Conns, kind: 'connect' | 'delete') => void;
@@ -107,6 +112,30 @@ interface DownInfo {
   trailKey: string | null;
 }
 
+type MenuAction = 'delete' | 'move' | 'rail';
+
+/**
+ * The hold menu on a placed machine: after the hold fills, three actions
+ * fan out around the machine (Delete above, Move top-right, Rail right)
+ * and the still-held pointer slides onto one — the same gesture language
+ * as SPLIT port picking. Rail and Move begin their drags mid-press;
+ * Delete commits on release.
+ */
+interface MenuState {
+  id: string;
+  pointerId: number;
+  active: MenuAction | null;
+  heldTile: string | null;
+}
+
+/** A machine being carried to a new anchor (hold menu → Move). Nothing is committed until the drop. */
+interface MoveState {
+  id: string;
+  pointerId: number;
+  anchor: string | null;
+  valid: boolean;
+}
+
 function beltTilesFor(
   key: string,
   conn: Conns[string],
@@ -140,6 +169,8 @@ export default function Board(props: BoardProps) {
   const [holdId, setHoldId] = useState<string | null>(null);
   const [holdIdx, setHoldIdx] = useState<number | null>(null);
   const [holdCell, setHoldCell] = useState<string | null>(null);
+  const [menu, setMenu] = useState<MenuState | null>(null);
+  const [moveSt, setMoveSt] = useState<MoveState | null>(null);
   const [, setMaskVersion] = useState(0);
 
   const propsRef = useRef(props);
@@ -150,12 +181,24 @@ export default function Board(props: BoardProps) {
   const dragRef = useRef<DragState | null>(null);
   dragRef.current = drag;
   const downRef = useRef<DownInfo | null>(null);
+  const menuRef = useRef<MenuState | null>(null);
+  const moveRef = useRef<MoveState | null>(null);
   const flashTimerRef = useRef<number | null>(null);
   const holdTimerRef = useRef<number | null>(null);
   const lastPointerRef = useRef<{ x: number; y: number; pointerId: number } | null>(null);
 
-  const placedDefs = placed as Record<string, NodeDef>;
-  const allIds = ['IN', ...level.outputs, ...Object.keys(placed)];
+  // While a machine is being carried (hold menu → Move), it renders at the
+  // hovered anchor and its own belts hide — they are re-routed on drop.
+  const displayPlaced: Record<string, PlacedNode> = (() => {
+    if (!moveSt) return placed;
+    const dp: Record<string, PlacedNode> = { ...placed };
+    const n = dp[moveSt.id];
+    delete dp[moveSt.id];
+    if (n && moveSt.anchor) dp[moveSt.anchor] = n;
+    return dp;
+  })();
+  const placedDefs = displayPlaced as Record<string, NodeDef>;
+  const allIds = ['IN', ...level.outputs, ...Object.keys(displayPlaced)];
   const obstacleSet = new Set(props.obstacles ?? []);
   const lockedSet = new Set(props.lockedIds ?? []);
 
@@ -444,6 +487,131 @@ export default function Board(props: BoardProps) {
     setHoldCell(null);
   }
 
+  // ---- Hold menu (Delete / Move / Rail) + machine carrying ----
+
+  /** Screen centre of a machine's sprite + its pixel size (billboards sit above their footprint). */
+  function spriteCenterOf(id: string): { x: number; y: number; s: number } {
+    const p = propsRef.current;
+    const c = fpCenterOf(id, p.placed, angleRef.current);
+    const fp = footprintOf(id, p.placed);
+    const s = 112 * (fp.w === 2 ? 1.25 : 1);
+    return { x: c.x, y: c.y + 12 - s / 2, s };
+  }
+
+  /** The three menu options around a machine: Delete above, Move top-right, Rail exactly right. */
+  function menuOptions(id: string): { key: MenuAction; x: number; y: number; label: string }[] {
+    const { x, y, s } = spriteCenterOf(id);
+    const top = y - s / 2;
+    return [
+      { key: 'delete', x, y: top - 32, label: 'Delete' },
+      { key: 'move', x: x + s / 2 + 18, y: top - 18, label: 'Move' },
+      { key: 'rail', x: x + s / 2 + 36, y: y + 2, label: 'Rail' },
+    ];
+  }
+
+  function menuActiveFor(id: string, pt: Point): MenuAction | null {
+    let best: MenuAction | null = null;
+    let bestDist = 54;
+    for (const o of menuOptions(id)) {
+      const d = Math.hypot(pt.x - o.x, pt.y - o.y);
+      if (d < bestDist) {
+        bestDist = d;
+        best = o.key;
+      }
+    }
+    return best;
+  }
+
+  function closeMenu() {
+    menuRef.current = null;
+    setMenu(null);
+  }
+
+  function menuMove(clientX: number, clientY: number, pointerId: number) {
+    const m = menuRef.current;
+    if (!m || m.pointerId !== pointerId) return;
+    const pt = evtPoint(clientX, clientY);
+    if (!pt) return;
+    const p = propsRef.current;
+    const active = menuActiveFor(m.id, pt);
+    if (active === 'rail') {
+      // Slide onto Rail: the belt drag begins inside the same press. For a
+      // SPLIT the port is picked from here on by dragging toward a port
+      // end (the live sector switching in dragMove), exactly as before.
+      closeMenu();
+      const n = p.placed[m.id];
+      let idx = 0;
+      if (n && n.type === 'split') {
+        const a = anchorOf(m.id, angleRef.current);
+        idx = pickSplitPort3(
+          [!!p.conns[m.id + ':0'], !!p.conns[m.id + ':1'], !!p.conns[m.id + ':2']],
+          (Math.atan2(pt.y - a.y, pt.x - a.x) * 180) / Math.PI,
+          Math.hypot(pt.x - a.x, pt.y - a.y),
+          -1,
+          splitPortAngles(angleRef.current),
+        );
+      }
+      startDrag(m.id + ':' + idx, pointerId, false, null, m.heldTile);
+      dragMove(clientX, clientY, pointerId);
+      return;
+    }
+    if (active === 'move') {
+      closeMenu();
+      const cell = pickCell(pt.x, pt.y, angleRef.current);
+      const mv: MoveState = { id: m.id, pointerId, anchor: cell, valid: moveValidity(m.id, cell) };
+      moveRef.current = mv;
+      setMoveSt(mv);
+      return;
+    }
+    if (active !== m.active) {
+      const nm: MenuState = { ...m, active };
+      menuRef.current = nm;
+      setMenu(nm);
+    }
+  }
+
+  /** Can the machine be dropped at `anchor`? Free cells, or a footprint a foreign belt can be spliced through. Its own belts never block: they are re-routed after the drop. */
+  function moveValidity(id: string, anchor: string | null): boolean {
+    if (!anchor) return false;
+    const p = propsRef.current;
+    const node = p.placed[id];
+    if (!node) return false;
+    const placedWithout: Record<string, NodeDef> = { ...p.placed };
+    delete placedWithout[id];
+    const cells = footprintCellsAt(anchor, node.type);
+    const obstacles = new Set(p.obstacles ?? []);
+    for (const c of cells) {
+      const pc = parseCell(c);
+      if (pc.c < 0 || pc.c >= COLS || pc.r < 0 || pc.r >= ROWS) return false;
+      if (obstacles.has(c)) return false;
+      if (machineAtCell(c, placedWithout)) return false;
+      for (const fid of ['IN', 'OUT', 'A', 'B']) {
+        if (footprintCells(fid, placedWithout).includes(c)) return false;
+      }
+    }
+    const foreign: Conns = {};
+    let foreignTouch = false;
+    for (const [k, v] of Object.entries(p.conns)) {
+      if (k.split(':')[0] === id || v.to === id) continue;
+      foreign[k] = v;
+      if (v.path.some((c) => cells.includes(c))) foreignTouch = true;
+    }
+    if (!foreignTouch) return true;
+    return spliceConns(foreign, anchor, node.type, placedWithout, obstacles) !== null;
+  }
+
+  function moveMove(clientX: number, clientY: number, pointerId: number) {
+    const mv = moveRef.current;
+    if (!mv || mv.pointerId !== pointerId) return;
+    const pt = evtPoint(clientX, clientY);
+    if (!pt) return;
+    const cell = pickCell(pt.x, pt.y, angleRef.current);
+    if (cell === mv.anchor) return;
+    const nm: MoveState = { ...mv, anchor: cell, valid: moveValidity(mv.id, cell) };
+    moveRef.current = nm;
+    setMoveSt(nm);
+  }
+
   function handlePointerDown(e: ReactPointerEvent<SVGSVGElement>) {
     if (propsRef.current.running || dragRef.current) return;
     const pt = evtPoint(e.clientX, e.clientY);
@@ -502,43 +670,61 @@ export default function Board(props: BoardProps) {
       return;
     }
 
-    // Hold-to-draw: pressing a machine body starts a hold; once it completes,
-    // belt drawing begins from that machine. A short press stays a click.
+    // Hold on a machine body: a short press stays a click. A completed hold
+    // on a placed, unlocked machine opens the action menu (Delete / Move /
+    // Rail); INPUT and locked machines keep the direct hold-to-draw belt.
     const isSource = mach !== null && (mach === 'IN' || !!p.placed[mach]);
     if (mach && isSource) {
       const n = p.placed[mach];
-      let idx = 0;
-      if (n && n.type === 'split') {
-        // The port is preselected by the press direction sector (a free
-        // port wins unless the press lands deep in a taken port's sector —
-        // see pickSplitPort3); the port markers show the choice for as long
-        // as the hold/drag lasts.
-        const a = anchorOf(mach, angleRef.current);
-        idx = pickSplitPort3(
-          [!!p.conns[mach + ':0'], !!p.conns[mach + ':1'], !!p.conns[mach + ':2']],
-          (Math.atan2(pt.y - a.y, pt.x - a.x) * 180) / Math.PI,
-          Math.hypot(pt.x - a.x, pt.y - a.y),
-          -1,
-          splitPortAngles(angleRef.current),
-        );
-        setHoldIdx(idx);
-      }
-      const srcKey = mach + ':' + idx;
       const pointerId = e.pointerId;
       // The tile this press belongs to: a belt out of a 2-tile machine
       // departs from the held tile's edge, not always the anchor's.
       const heldTile = heldTileOf(footprintCells(mach, p.placed), pt, angleRef.current);
+      const menuEligible = !!n && !(p.lockedIds ?? []).includes(mach);
       setHoldId(mach);
-      holdTimerRef.current = window.setTimeout(() => {
-        holdTimerRef.current = null;
-        setHoldId(null);
-        setHoldIdx(null);
-        downRef.current = null;
-        if (propsRef.current.running || dragRef.current) return;
-        startDrag(srcKey, pointerId, false, null, heldTile);
-        const last = lastPointerRef.current;
-        if (last) dragMove(last.x, last.y, pointerId);
-      }, HOLD_MS);
+      if (menuEligible) {
+        holdTimerRef.current = window.setTimeout(() => {
+          holdTimerRef.current = null;
+          setHoldId(null);
+          downRef.current = null;
+          if (propsRef.current.running || dragRef.current) return;
+          if (!propsRef.current.placed[mach]) return;
+          const m: MenuState = { id: mach, pointerId, active: null, heldTile };
+          menuRef.current = m;
+          setMenu(m);
+          // The pointer may already be sliding toward an option.
+          const last = lastPointerRef.current;
+          if (last) menuMove(last.x, last.y, pointerId);
+        }, HOLD_MS);
+      } else {
+        let idx = 0;
+        if (n && n.type === 'split') {
+          // The port is preselected by the press direction sector (a free
+          // port wins unless the press lands deep in a taken port's sector —
+          // see pickSplitPort3); the port markers show the choice for as
+          // long as the hold/drag lasts.
+          const a = anchorOf(mach, angleRef.current);
+          idx = pickSplitPort3(
+            [!!p.conns[mach + ':0'], !!p.conns[mach + ':1'], !!p.conns[mach + ':2']],
+            (Math.atan2(pt.y - a.y, pt.x - a.x) * 180) / Math.PI,
+            Math.hypot(pt.x - a.x, pt.y - a.y),
+            -1,
+            splitPortAngles(angleRef.current),
+          );
+          setHoldIdx(idx);
+        }
+        const srcKey = mach + ':' + idx;
+        holdTimerRef.current = window.setTimeout(() => {
+          holdTimerRef.current = null;
+          setHoldId(null);
+          setHoldIdx(null);
+          downRef.current = null;
+          if (propsRef.current.running || dragRef.current) return;
+          startDrag(srcKey, pointerId, false, null, heldTile);
+          const last = lastPointerRef.current;
+          if (last) dragMove(last.x, last.y, pointerId);
+        }, HOLD_MS);
+      }
     }
     e.preventDefault();
   }
@@ -546,6 +732,14 @@ export default function Board(props: BoardProps) {
   useEffect(() => {
     function onMove(e: PointerEvent) {
       lastPointerRef.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
+      if (menuRef.current) {
+        menuMove(e.clientX, e.clientY, e.pointerId);
+        return;
+      }
+      if (moveRef.current) {
+        moveMove(e.clientX, e.clientY, e.pointerId);
+        return;
+      }
       const cam = camRef.current;
       if (cam && e.pointerId === cam.pointerId && !dragRef.current) {
         const dx = e.clientX - cam.startX;
@@ -570,6 +764,37 @@ export default function Board(props: BoardProps) {
         finishDrag();
         return;
       }
+      if (menuRef.current && e.pointerId === menuRef.current.pointerId) {
+        const m = menuRef.current;
+        closeMenu();
+        // Delete commits on release; Rail/Move already became drags while sliding.
+        if (m.active === 'delete') propsRef.current.onUnplace(m.id);
+        return;
+      }
+      if (moveRef.current && e.pointerId === moveRef.current.pointerId) {
+        const mv = moveRef.current;
+        moveRef.current = null;
+        setMoveSt(null);
+        if (mv.anchor && mv.valid && mv.anchor !== mv.id) {
+          const p = propsRef.current;
+          const node = p.placed[mv.id];
+          if (node) {
+            const placedWithout: Record<string, NodeDef> = { ...p.placed };
+            delete placedWithout[mv.id];
+            const next = rerouteMovedConns(
+              p.conns,
+              placedWithout,
+              mv.id,
+              mv.anchor,
+              node,
+              p.level.railLimit,
+              new Set(p.obstacles ?? []),
+            );
+            p.onMoveNode(mv.id, mv.anchor, next);
+          }
+        }
+        return;
+      }
       cancelHold();
       const info = downRef.current;
       downRef.current = null;
@@ -592,14 +817,21 @@ export default function Board(props: BoardProps) {
           p.onPlaceRejected(info.cell);
           flashCell(info.cell);
         } else if (cellPlaceable(info.cell, p.ghost.type, p.placed, p.conns, new Set(p.obstacles ?? []))) {
-          p.onPlace(info.cell);
+          p.onPlace(info.cell, null);
         } else {
-          flashCell(info.cell);
+          // Dropping the machine onto a running belt splices it into the
+          // line: the belt splits around it and the flow never breaks.
+          const spliced = spliceConns(p.conns, info.cell, p.ghost.type, p.placed, new Set(p.obstacles ?? []));
+          if (spliced) p.onPlace(info.cell, spliced);
+          else flashCell(info.cell);
         }
       }
     }
     function onCancel() {
       camRef.current = null;
+      closeMenu();
+      moveRef.current = null;
+      setMoveSt(null);
       cancelHold();
       if (dragRef.current) {
         dragRef.current = null;
@@ -632,7 +864,10 @@ export default function Board(props: BoardProps) {
   machineEntries.sort((a, b) => a.d - b.d);
 
   const ghostPlaceable =
-    ghost && hoverCell ? cellPlaceable(hoverCell, ghost.type, placedDefs, conns, obstacleSet) : false;
+    ghost && hoverCell
+      ? cellPlaceable(hoverCell, ghost.type, placedDefs, conns, obstacleSet) ||
+        spliceConns(conns, hoverCell, ghost.type, placedDefs, obstacleSet) !== null
+      : false;
 
   return (
     <svg id="board" viewBox="0 0 960 560" ref={props.svgRef} onPointerDown={handlePointerDown}>
@@ -686,7 +921,21 @@ export default function Board(props: BoardProps) {
           </g>
         )}
 
-        {Object.keys(conns).map((key) => (
+        {moveSt && moveSt.anchor && placed[moveSt.id] && (
+          <g>
+            {footprintCellsAtSafe(moveSt.anchor, placed[moveSt.id].type).map((c) => (
+              <polygon
+                key={c}
+                points={diamondPoints(cellCenter(c), 1.5)}
+                className={'cell-outline' + (moveSt.valid ? ' ok' : ' bad')}
+              />
+            ))}
+          </g>
+        )}
+
+        {Object.keys(conns).map((key) => {
+          if (moveSt && (key.split(':')[0] === moveSt.id || conns[key].to === moveSt.id)) return null;
+          return (
           <g key={key} className="belt-conn" data-conn={key}>
             {beltTilesFor(key, conns[key], placedDefs).map(({ cell, tile }) => {
               if (!tile) return null;
@@ -706,7 +955,8 @@ export default function Board(props: BoardProps) {
               );
             })}
           </g>
-        ))}
+          );
+        })}
 
         {drag && (
           <g className={'belt-preview' + (drag.over ? ' over' : '')}>
@@ -762,7 +1012,7 @@ export default function Board(props: BoardProps) {
       </text>
 
       {machineEntries.map(({ id }) => (
-        <MachineSprite key={id} id={id} placed={placed} flash={flashNodeId === id} angle={angle} />
+        <MachineSprite key={id} id={id} placed={displayPlaced} flash={flashNodeId === id} angle={angle} />
       ))}
       {holdId &&
         (() => {
@@ -792,6 +1042,25 @@ export default function Board(props: BoardProps) {
             />
           );
         })()}
+      {menu && (
+        <g className="hold-menu">
+          {menuOptions(menu.id).map((o) => (
+            <g
+              key={o.key}
+              className={'hold-opt' + (menu.active === o.key ? ' active' : '')}
+              transform={`translate(${o.x} ${o.y})`}
+            >
+              <circle r={21} />
+              {o.key === 'delete' && <path d="M-7 -7 L7 7 M7 -7 L-7 7" />}
+              {o.key === 'move' && (
+                <path d="M0 -9 V9 M-9 0 H9 M0 -9 L-3.5 -4.5 M0 -9 L3.5 -4.5 M0 9 L-3.5 4.5 M0 9 L3.5 4.5 M-9 0 L-4.5 -3.5 M-9 0 L-4.5 3.5 M9 0 L4.5 -3.5 M9 0 L4.5 3.5" />
+              )}
+              {o.key === 'rail' && <path d="M-11 -4.5 H11 M-11 4.5 H11 M-6.5 -8.5 V8.5 M0 -8.5 V8.5 M6.5 -8.5 V8.5" />}
+              <text y={35}>{o.label}</text>
+            </g>
+          ))}
+        </g>
+      )}
       {props.stuckCell && (
         <g className="stuck-cell">
           <polygon points={diamondPoints(cellCenter(props.stuckCell, angle), 1, angle)} />
@@ -835,16 +1104,16 @@ export default function Board(props: BoardProps) {
       <g ref={props.tokenLayerRef} />
 
       {allIds.map((id) => (
-        <MachineLabel key={'lb-' + id} id={id} placed={placed} bufLabels={bufLabels} locked={lockedSet.has(id)} angle={angle} />
+        <MachineLabel key={'lb-' + id} id={id} placed={displayPlaced} bufLabels={bufLabels} locked={lockedSet.has(id)} angle={angle} />
       ))}
 
-      {Object.keys(placed)
-        .filter((id) => placed[id].type === 'split')
+      {Object.keys(displayPlaced)
+        .filter((id) => displayPlaced[id].type === 'split')
         .map((id) => (
           <SplitExitDots key={'dots-' + id} id={id} def={placedDefs[id]} placed={placedDefs} angle={angle} />
         ))}
-      {Object.keys(placed)
-        .filter((id) => placed[id].type === 'split' && !lockedSet.has(id))
+      {Object.keys(displayPlaced)
+        .filter((id) => displayPlaced[id].type === 'split' && !lockedSet.has(id))
         .map((id) => (
           <SplitRouteChip key={'chip-' + id} id={id} placed={placedDefs} onEdit={props.onEditRoute} angle={angle} />
         ))}

@@ -1,30 +1,58 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import GameScreen from './components/GameScreen';
 import type { GameMode } from './components/GameScreen';
 import HomeScreen from './components/HomeScreen';
+import MenuScreen from './components/MenuScreen';
 import { isBetter } from './engine';
 import { LOGO_IMG } from './nodeMeta';
 import { isMuted, setMuted, sfx } from './audio/sfx';
-import { LEVELS, levelById, levelsOfChapter, nextLevel } from './levels';
+import { isMusicMuted, setMusicMuted, startMusic } from './audio/music';
+import { CHAPTERS, LEVELS, levelById, levelsOfChapter, nextLevel } from './levels';
 import { loadExpertProgress, loadProgress, saveExpertProgress, saveProgress } from './progress';
 import type { ProgressMap } from './progress';
 import type { Level, Metrics } from './types';
 
 const DEMO = import.meta.env.VITE_DEMO === '1';
 
-type Screen = { kind: 'home' } | { kind: 'game'; levelId: string; mode: GameMode } | { kind: 'gate' };
+type Screen =
+  | { kind: 'menu' }
+  | { kind: 'home' }
+  | { kind: 'game'; levelId: string; mode: GameMode }
+  | { kind: 'gate' };
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>({ kind: 'home' });
+  const [screen, setScreen] = useState<Screen>({ kind: 'menu' });
   const [progress, setProgress] = useState<ProgressMap>(() => loadProgress());
   const [expertProgress, setExpertProgress] = useState<ProgressMap>(() => loadExpertProgress());
   const [soundMuted, setSoundMuted] = useState<boolean>(() => isMuted());
+  const [musicOff, setMusicOff] = useState<boolean>(() => isMusicMuted());
+
+  // Music may only start after a user gesture (autoplay rules): the
+  // first pointerdown anywhere starts it, unless the user muted it.
+  useEffect(() => {
+    const kick = () => startMusic();
+    window.addEventListener('pointerdown', kick, { once: true });
+    return () => window.removeEventListener('pointerdown', kick);
+  }, []);
 
   function toggleMute() {
     const next = !soundMuted;
     setMuted(next);
     setSoundMuted(next);
     if (!next) sfx.click();
+  }
+
+  function toggleMusic() {
+    const next = !musicOff;
+    setMusicMuted(next);
+    setMusicOff(next);
+  }
+
+  function resetProgress() {
+    setProgress({});
+    saveProgress({});
+    setExpertProgress({});
+    saveExpertProgress({});
   }
 
   function handleWin(level: Level, stars: number, metrics: Metrics, mode: GameMode) {
@@ -71,7 +99,8 @@ export default function App() {
 
   return (
     <div className="wrap">
-      <header>
+      {screen.kind !== 'menu' && (
+        <header>
         <img className="logo" src={LOGO_IMG} alt="ALUR" />
         <div className="tag">Place machines. Connect belts. Run the flow.</div>
         {DEMO && <div className="proof-badge">DEMO VERSION</div>}
@@ -110,13 +139,32 @@ export default function App() {
             </svg>
           )}
         </button>
-      </header>
+        </header>
+      )}
+
+      {screen.kind === 'menu' && (
+        <MenuScreen
+          progress={progress}
+          expertProgress={expertProgress}
+          demo={DEMO}
+          muted={soundMuted}
+          musicMuted={musicOff}
+          onPlay={() => setScreen({ kind: 'home' })}
+          onToggleMute={toggleMute}
+          onToggleMusic={toggleMusic}
+          onResetProgress={resetProgress}
+        />
+      )}
 
       {screen.kind === 'home' && (
         <HomeScreen
           progress={progress}
           expertProgress={expertProgress}
           demo={DEMO}
+          onMenu={() => {
+            sfx.click();
+            setScreen({ kind: 'menu' });
+          }}
           onPlay={(id, mode) => {
             sfx.select();
             setScreen({ kind: 'game', levelId: id, mode });
@@ -146,9 +194,11 @@ export default function App() {
         <GateScreen progress={progress} onHome={() => setScreen({ kind: 'home' })} />
       )}
 
-      <footer className="foot">
-        ALUR — {LEVELS.length} levels, four chapters, plus an Expert variant of every level.
-      </footer>
+      {screen.kind !== 'menu' && (
+        <footer className="foot">
+          ALUR — {LEVELS.length} levels, {CHAPTERS.length} chapters, plus an Expert variant of every level.
+        </footer>
+      )}
     </div>
   );
 }

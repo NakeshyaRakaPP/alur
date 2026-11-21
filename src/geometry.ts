@@ -514,6 +514,133 @@ export function railsUsed(conns: Conns): number {
   return Object.keys(conns).reduce((s, k) => s + conns[k].path.length, 0);
 }
 
+/**
+ * Splice a machine into an existing belt: when the machine's footprint at
+ * `anchor` covers one contiguous run of exactly one connection's path (and
+ * nothing else blocks the footprint), that connection is split in two — the
+ * upstream part now ends at the machine, and the machine's port 0 continues
+ * with the downstream part to the original destination (or keeps the trail
+ * open when the belt was open-ended). The flow through the line is never
+ * broken. Returns the rewritten conns, or null when no splice applies.
+ * `placed` must NOT contain the machine being inserted.
+ */
+export function spliceConns(
+  conns: Conns,
+  anchor: string,
+  type: NodeType,
+  placed: Record<string, NodeDef>,
+  obstacles?: Set<string>,
+): Conns | null {
+  const cells = footprintCellsAt(anchor, type);
+  const cellSet = new Set(cells);
+  for (const c of cells) {
+    const p = parseCell(c);
+    if (p.c < 0 || p.c >= COLS || p.r < 0 || p.r >= ROWS) return null;
+    if (obstacles && obstacles.has(c)) return null;
+    if (machineAtCell(c, placed)) return null;
+    for (const fid of ['IN', 'OUT', 'A', 'B']) {
+      if (footprintCells(fid, placed).includes(c)) return null;
+    }
+  }
+  let hitKey: string | null = null;
+  let hitIdx: number[] = [];
+  for (const k of Object.keys(conns)) {
+    const idx = conns[k].path.map((c, i) => (cellSet.has(c) ? i : -1)).filter((i) => i >= 0);
+    if (idx.length) {
+      if (hitKey) return null; // the footprint touches two belts: ambiguous
+      hitKey = k;
+      hitIdx = idx;
+    }
+  }
+  if (!hitKey) return null;
+  const lo = Math.min(...hitIdx);
+  const hi = Math.max(...hitIdx);
+  if (hi - lo + 1 !== hitIdx.length) return null; // belt enters, leaves, re-enters
+  const conn = conns[hitKey];
+  const next: Conns = { ...conns };
+  next[hitKey] = { to: anchor, path: conn.path.slice(0, lo) };
+  next[anchor + ':0'] = { to: conn.to, path: conn.path.slice(hi + 1) };
+  return next;
+}
+
+/**
+ * Rebuild the connections of a machine that was MOVED to a new anchor: its
+ * own belts are detached, a foreign belt under the new footprint is spliced
+ * first (see spliceConns), then each detached belt is re-routed with the
+ * game's auto-path inside the remaining rail budget. Belts that no longer
+ * fit or reach are dropped; open-ended outgoing trails are dropped (their
+ * shape belonged to the old spot). `placed` must NOT contain the machine.
+ */
+export function rerouteMovedConns(
+  conns: Conns,
+  placed: Record<string, NodeDef>,
+  origId: string,
+  newAnchor: string,
+  node: NodeDef,
+  railLimit: number,
+  obstacles?: Set<string>,
+): Conns {
+  const placedWith: Record<string, NodeDef> = { ...placed, [newAnchor]: node };
+  const own: [string, BeltConn][] = [];
+  let next: Conns = {};
+  for (const [k, v] of Object.entries(conns)) {
+    if (k.split(':')[0] === origId || v.to === origId) own.push([k, v]);
+    else next[k] = v;
+  }
+  const spliced = spliceConns(next, newAnchor, node.type, placed, obstacles);
+  if (spliced) next = spliced;
+
+  const blocked = new Set<string>();
+  for (const fid of ['IN', 'OUT', 'A', 'B']) footprintCells(fid, placedWith).forEach((c) => blocked.add(c));
+  Object.keys(placedWith).forEach((k) => footprintCells(k, placedWith).forEach((c) => blocked.add(c)));
+  (obstacles ?? new Set<string>()).forEach((c) => blocked.add(c));
+  Object.values(next).forEach((v) => v.path.forEach((c) => blocked.add(c)));
+  let used = railsUsed(next);
+  const newCells = footprintCells(newAnchor, placedWith);
+
+  // Incoming belts first (their source ports keep their identity).
+  for (const [key, conn] of own) {
+    if (conn.to !== origId) continue;
+    const srcId = key.split(':')[0];
+    const res = findBeltPath({
+      srcCells: footprintCells(srcId, placedWith),
+      goalCells: beltGoalCells(newCells, blocked),
+      directCells: newCells,
+      blocked,
+      budget: railLimit - used,
+    });
+    if (res.path && !res.overBudget) {
+      next[key] = { to: newAnchor, path: res.path };
+      used += res.path.length;
+      res.path.forEach((c) => blocked.add(c));
+    }
+  }
+  // Outgoing belts by port order; a port the splice already claimed wins.
+  const outgoing = own
+    .filter(([k]) => k.split(':')[0] === origId)
+    .sort((a, b) => parseInt(a[0].split(':')[1], 10) - parseInt(b[0].split(':')[1], 10));
+  for (const [key, conn] of outgoing) {
+    const idx = key.split(':')[1];
+    const newKey = newAnchor + ':' + idx;
+    if (next[newKey] || conn.to === null) continue;
+    const dstCells = footprintCells(conn.to, placedWith);
+    const res = findMachineExitPath({
+      srcCells: newCells,
+      heldTile: null,
+      goalCells: beltGoalCells(dstCells, blocked),
+      directCells: dstCells,
+      blocked,
+      budget: railLimit - used,
+    });
+    if (res.path && !res.overBudget) {
+      next[newKey] = { to: conn.to, path: res.path };
+      used += res.path.length;
+      res.path.forEach((c) => blocked.add(c));
+    }
+  }
+  return next;
+}
+
 export interface DragCtx {
   srcKey: string;
   srcCell: string;

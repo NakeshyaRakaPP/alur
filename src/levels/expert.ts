@@ -79,12 +79,17 @@ const CFG: Record<string, ExpertCfg> = {
     ],
   },
   'c4-1': {
-    obstacles: ['4,3', '4,2', '8,2'],
+    // Rintangan dipindah dari koridor loop atas (4,2/4,3) di v5.0: rute
+    // referensi hasil auto-path lebih pendek dari rute tangan lama, jadi
+    // limit Expert menyusut dan loop atas tidak boleh ditutup lagi.
+    obstacles: ['2,2', '8,2', '2,4'],
     locked: { '3,3': { type: 'split', color: 'R' } },
     tray: [{ type: 'merge', to: 'G' }],
   },
   'c4-2': {
-    obstacles: ['4,3', '4,2'],
+    // Sama seperti c4-1: koridor loop atas dibuka, rintangan digeser ke
+    // sel yang tidak dipakai rute referensi mana pun.
+    obstacles: ['2,2', '2,4'],
     locked: { '6,3': { type: 'merge', to: 'G' } },
     tray: [{ type: 'split', color: 'R' }, { type: 'tahan', size: 3 }],
   },
@@ -108,6 +113,58 @@ const CFG: Record<string, ExpertCfg> = {
     tray: [
       { type: 'tahan', size: 3 },
       { type: 'merge', to: 'G' },
+    ],
+  },
+  'c5-1': {
+    obstacles: ['2,2', '2,4', '6,4'],
+    tray: [
+      { type: 'split', color: 'R', side: 'G' },
+      { type: 'transform', to: 'B' },
+      { type: 'tahan', size: 2 },
+      { type: 'filter', color: 'G' },
+    ],
+  },
+  'c5-2': {
+    obstacles: ['2,2', '8,2', '8,4'],
+    tray: [
+      { type: 'split', color: 'B' },
+      { type: 'transform', to: 'R' },
+      { type: 'merge', to: 'G' },
+    ],
+  },
+  'c5-3': {
+    obstacles: ['2,2', '9,2', '2,4'],
+    locked: { '4,3': { type: 'split', color: 'G', side: 'R' } },
+    tray: [
+      { type: 'tahan', size: 3 },
+      { type: 'transform', to: 'B' },
+    ],
+  },
+  'c5-4': {
+    obstacles: ['2,2', '2,4', '9,2'],
+    tray: [
+      { type: 'sort', order: ['R', 'B', 'G'] },
+      { type: 'split', color: 'R', side: 'B' },
+      { type: 'transform', to: 'G' },
+      { type: 'tahan', size: 2 },
+    ],
+  },
+  'c5-5': {
+    obstacles: ['2,2', '9,2', '2,4'],
+    tray: [
+      { type: 'split', color: 'G', side: 'R' },
+      { type: 'filter', color: 'B' },
+      { type: 'merge', to: 'G' },
+      { type: 'tahan', size: 2 },
+    ],
+  },
+  'c5-6': {
+    obstacles: ['2,2', '9,2', '2,4'],
+    locked: { '3,3': { type: 'split', color: 'G', side: 'R' } },
+    tray: [
+      { type: 'tahan', size: 3 },
+      { type: 'merge', to: 'B' },
+      { type: 'tahan', size: 3 },
     ],
   },
 };

@@ -86,10 +86,14 @@ export interface Level {
   goalText?: string;
   goalTextId?: string;
   par: number;
+  /** Rails used by the reference solution; the yardstick for star grades and roomy limits. */
+  refRails?: number;
   /** Maximum total belt cells (rails) the player may lay down on this level. */
   railLimit: number;
   tray: NodeDef[];
   solution: Solution;
+  /** A second, architecturally different winning build (verified in the harness). Proof the level is not single-solution. */
+  altSolution?: Solution;
   /** Expert variant of this level (present on every level). */
   expert?: ExpertSpec;
 }

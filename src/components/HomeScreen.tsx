@@ -6,14 +6,18 @@ interface HomeScreenProps {
   progress: ProgressMap;
   expertProgress: ProgressMap;
   demo: boolean;
+  onMenu: () => void;
   onPlay: (levelId: string, mode: GameMode) => void;
 }
 
-export default function HomeScreen({ progress, expertProgress, demo, onPlay }: HomeScreenProps) {
+export default function HomeScreen({ progress, expertProgress, demo, onMenu, onPlay }: HomeScreenProps) {
   const done = LEVELS.filter((l) => (progress[l.id]?.stars ?? 0) > 0).length;
 
   return (
     <div>
+      <button className="ghost menu-back" onClick={onMenu}>
+        ← Main Menu
+      </button>
       <div className="home-summary">
         <span>
           Systems shipped: <b>{done}</b> of <b>{LEVELS.length}</b> levels

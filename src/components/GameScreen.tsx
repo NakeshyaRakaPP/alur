@@ -24,7 +24,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 type ResultState =
-  | { win: true; metrics: Metrics; stars: number; isNewBest: boolean; prevBest: Metrics | null }
+  | { win: true; metrics: Metrics; stars: number; rails: number; par: number; refRails: number; isNewBest: boolean; prevBest: Metrics | null }
   | { win: false; verdict: Verdict; placed: Record<string, NodeDef> };
 
 type Lang = 'en' | 'id';
@@ -497,8 +497,17 @@ export default function GameScreen({
       const metrics = computeMetrics(defs, res.hops);
       const stars = expert
         ? starsForExpert(expertRefNodes, expertRefRails, expert.railLimit, metrics, railsUsed(conns))
-        : starsFor(level, metrics);
-      setResult({ win: true, metrics, stars, isNewBest: isBetter(metrics, best), prevBest: best });
+        : starsFor(level, metrics, railsUsed(conns));
+      setResult({
+        win: true,
+        metrics,
+        stars,
+        rails: railsUsed(conns),
+        par: expert ? expertRefNodes : level.par,
+        refRails: expert ? expertRefRails : (level.refRails ?? railsUsed(level.solution.connections)),
+        isNewBest: isBetter(metrics, best),
+        prevBest: best,
+      });
       setWon(true);
       setShowStamp(true);
       setConfetti(
@@ -556,16 +565,33 @@ export default function GameScreen({
     setFlashNodeId(null);
   }
 
-  function placeAt(cell: string) {
+  function placeAt(cell: string, splice: Conns | null) {
     if (running) return;
     const i = trayState.findIndex((n) => n.uid === selTray);
     if (i < 0) return;
     const node = trayState[i];
     setTrayState(trayState.filter((_, j) => j !== i));
     setPlaced({ ...placed, [cell]: node });
+    // Dropped onto a running belt: the board already split the belt around
+    // the machine — adopt the spliced connections as-is.
+    if (splice) setConns(splice);
     sfx.place();
     setSelTray(null);
     hintSay('Now hold INPUT until the ring fills, then drag a belt to this machine.');
+    touchEdit();
+  }
+
+  function moveNode(id: string, newAnchor: string, next: Conns) {
+    if (running) return;
+    const n = placed[id];
+    if (!n) return;
+    const nextPlaced = { ...placed };
+    delete nextPlaced[id];
+    nextPlaced[newAnchor] = n;
+    setPlaced(nextPlaced);
+    setConns(next);
+    if (routeEditId === id) setRouteEditId(newAnchor);
+    sfx.place();
     touchEdit();
   }
 
@@ -826,6 +852,7 @@ export default function GameScreen({
             onPlace={placeAt}
             onPlaceRejected={() => hintSay('Pick a machine from the rack first.')}
             onUnplace={unplace}
+            onMoveNode={moveNode}
             onEditRoute={openRouteEditor}
             onConnsChange={handleConnsChange}
             onDragRails={setDragRails}
@@ -957,17 +984,28 @@ export default function GameScreen({
         ))}
       </div>
 
-      {result && (result.win ? renderWin(result, expert ? expertRefNodes : level.par) : renderFail(result))}
+      {result && (result.win ? renderWin(result) : renderFail(result))}
 
     </div>
   );
 }
 
 function renderWin(
-  r: { metrics: Metrics; stars: number; isNewBest: boolean; prevBest: Metrics | null },
-  par: number,
+  r: { metrics: Metrics; stars: number; rails: number; par: number; refRails: number; isNewBest: boolean; prevBest: Metrics | null },
 ): ReactNode {
   const m = r.metrics;
+  const nodeOver = m.node > r.par;
+  const railOver = r.rails > r.refRails + Math.max(1, Math.ceil(r.refRails * 0.15));
+  const hint =
+    r.stars === 3
+      ? ' — clean build: few machines, short belts.'
+      : nodeOver && railOver
+        ? ' — try fewer machines and shorter belts for full stars.'
+        : nodeOver
+          ? ' — try fewer machines for full stars.'
+          : railOver
+            ? ' — try shorter belts for full stars.'
+            : ' — almost clean. Small tweaks earn full stars.';
   return (
     <div className="result win">
       <span className="stars">
@@ -979,7 +1017,7 @@ function renderWin(
       </span>
       <br />
       <b>It works.</b> All tokens on target
-      {m.node <= par ? ' — with the fewest machines.' : ' — try fewer machines for full stars.'}
+      {hint}
       <br />
       <span className="metrics">
         Node: <b>{m.node}</b> · Space: <b>{m.ruang} cells</b> · Token steps: <b>{m.langkah}</b>

@@ -1,5 +1,5 @@
 import type { ColorCode, Conns, Level, Metrics, NodeDef, OutputId } from './types';
-import { footprintCells, parseCell } from './geometry';
+import { footprintCells, parseCell, railsUsed } from './geometry';
 import { splitPortFor } from './nodeMeta';
 
 export interface Arrival {
@@ -332,10 +332,19 @@ export function computeMetrics(placed: Record<string, NodeDef>, hops: number): M
   return { node: Object.keys(placed).length, ruang, langkah: hops };
 }
 
-export function starsFor(level: Level, metrics: Metrics): number {
-  if (metrics.node <= level.par) return 3;
-  if (metrics.node === level.par + 1) return 2;
-  return 1;
+/**
+ * Bintang mode dasar: efisiensi dua sumbu — mesin dan rail — dinilai dari
+ * solusi referensi level. Nilai akhir = sumbu terburuk, jadi kemenangan
+ * pertama yang masih boros wajar di bintang 2 dan bintang 3 adalah target
+ * optimasi untuk main ulang.
+ */
+export function starsFor(level: Level, metrics: Metrics, rails: number): number {
+  const ref = level.refRails ?? railsUsed(level.solution.connections);
+  const rail3 = ref + Math.max(1, Math.ceil(ref * 0.15));
+  const rail2 = ref + Math.max(3, Math.ceil(ref * 0.4));
+  const nodeGrade = metrics.node <= level.par ? 0 : metrics.node === level.par + 1 ? 1 : 2;
+  const railGrade = rails <= rail3 ? 0 : rails <= rail2 ? 1 : 2;
+  return 3 - Math.max(nodeGrade, railGrade);
 }
 
 /**
