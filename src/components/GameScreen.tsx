@@ -577,7 +577,7 @@ export default function GameScreen({
     if (splice) setConns(splice);
     sfx.place();
     setSelTray(null);
-    hintSay('Now hold INPUT until the ring fills, then drag a belt to this machine.');
+    hintSay('Now hold INPUT until the ring fills, let go, then click this machine to lay the belt.');
     touchEdit();
   }
 

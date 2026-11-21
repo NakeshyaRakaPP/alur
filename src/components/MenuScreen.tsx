@@ -176,7 +176,7 @@ export default function MenuScreen(props: MenuScreenProps) {
                 </div>
                 <div className="howto-row">
                   <img src={BELT_IMG.steel.ew} alt="" />
-                  <span>Hold a machine, pick Rail, drag to lay a belt.</span>
+                  <span>Hold a machine, pick Rail, click the target to lay a belt.</span>
                 </div>
                 <div className="howto-row">
                   <img src={TOKEN_IMG.R} alt="" />

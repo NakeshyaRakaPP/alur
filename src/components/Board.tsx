@@ -99,6 +99,13 @@ interface DragState {
   frozen: string[] | null;
   /** The footprint tile the player held to start this drag: the exit route prefers it whenever it costs no extra rails. */
   srcTile: string | null;
+  /**
+   * Hands-free follow mode: the starting press has been released and the
+   * belt now follows the cursor on its own — the NEXT click plants it
+   * (Esc / right-click cancels). Every drag becomes a follow drag on
+   * release; menu-born drags start in follow mode directly.
+   */
+  follow: boolean;
 }
 
 interface DownInfo {
@@ -117,9 +124,11 @@ type MenuAction = 'delete' | 'move' | 'rail';
 /**
  * The hold menu on a placed machine: after the hold fills, three actions
  * fan out around the machine (Delete above, Move top-right, Rail right)
- * and the still-held pointer slides onto one — the same gesture language
- * as SPLIT port picking. Rail and Move begin their drags mid-press;
- * Delete commits on release.
+ * and the still-held pointer slides onto one to ARM it — nothing fires
+ * while the press lasts. On release the armed action runs: Delete removes
+ * at once, Move lifts the machine into hands-free follow mode, Rail starts
+ * a follow-mode belt drag. A plain click on a machine does nothing at all;
+ * this menu is the only way to remove or move one.
  */
 interface MenuState {
   id: string;
@@ -128,12 +137,17 @@ interface MenuState {
   heldTile: string | null;
 }
 
-/** A machine being carried to a new anchor (hold menu → Move). Nothing is committed until the drop. */
+/**
+ * A machine being carried to a new anchor (hold menu → Move). It follows
+ * the cursor hands-free after the hold is released; the next click drops
+ * it (Esc / right-click cancels). Nothing is committed until the drop.
+ */
 interface MoveState {
   id: string;
   pointerId: number;
   anchor: string | null;
   valid: boolean;
+  follow: boolean;
 }
 
 function beltTilesFor(
@@ -305,6 +319,7 @@ export default function Board(props: BoardProps) {
     fixedPort = false,
     frozen: string[] | null = null,
     srcTile: string | null = null,
+    follow = false,
   ) {
     const p = propsRef.current;
     const [srcId, idxStr] = portKey.split(':');
@@ -325,7 +340,7 @@ export default function Board(props: BoardProps) {
       for (const c of frozen) blocked.add(c);
       ctx.path = [...frozen];
     }
-    setDrag({ pointerId, srcId, idx, srcKey: portKey, ctx, blocked, hoverMachine: null, cell: null, over: false, fixedPort, frozen, srcTile });
+    setDrag({ pointerId, srcId, idx, srcKey: portKey, ctx, blocked, hoverMachine: null, cell: null, over: false, fixedPort, frozen, srcTile, follow });
     p.onDragRails(ctx.base + ctx.path.length);
   }
 
@@ -344,7 +359,9 @@ export default function Board(props: BoardProps) {
 
   function dragMove(clientX: number, clientY: number, pointerId: number) {
     const d0 = dragRef.current;
-    if (!d0 || pointerId !== d0.pointerId) return;
+    // In follow mode the press is over: any pointer movement (and the
+    // committing click, whatever its id) drives the preview.
+    if (!d0 || (!d0.follow && pointerId !== d0.pointerId)) return;
     const p = propsRef.current;
     const pt = evtPoint(clientX, clientY);
     if (!pt) return;
@@ -498,20 +515,20 @@ export default function Board(props: BoardProps) {
     return { x: c.x, y: c.y + 12 - s / 2, s };
   }
 
-  /** The three menu options around a machine: Delete above, Move top-right, Rail exactly right. */
+  /** The three menu options hugging the machine: Delete above, Move top-right, Rail exactly right. */
   function menuOptions(id: string): { key: MenuAction; x: number; y: number; label: string }[] {
     const { x, y, s } = spriteCenterOf(id);
     const top = y - s / 2;
     return [
-      { key: 'delete', x, y: top - 32, label: 'Delete' },
-      { key: 'move', x: x + s / 2 + 18, y: top - 18, label: 'Move' },
-      { key: 'rail', x: x + s / 2 + 36, y: y + 2, label: 'Rail' },
+      { key: 'delete', x, y: top - 14, label: 'Delete' },
+      { key: 'move', x: x + s / 2 + 8, y: top - 8, label: 'Move' },
+      { key: 'rail', x: x + s / 2 + 20, y, label: 'Rail' },
     ];
   }
 
   function menuActiveFor(id: string, pt: Point): MenuAction | null {
     let best: MenuAction | null = null;
-    let bestDist = 54;
+    let bestDist = 46;
     for (const o of menuOptions(id)) {
       const d = Math.hypot(pt.x - o.x, pt.y - o.y);
       if (d < bestDist) {
@@ -532,37 +549,9 @@ export default function Board(props: BoardProps) {
     if (!m || m.pointerId !== pointerId) return;
     const pt = evtPoint(clientX, clientY);
     if (!pt) return;
-    const p = propsRef.current;
+    // Sliding only ARMS an option (it lights up). Every action — Delete,
+    // Move, Rail — fires when the press is released, never mid-press.
     const active = menuActiveFor(m.id, pt);
-    if (active === 'rail') {
-      // Slide onto Rail: the belt drag begins inside the same press. For a
-      // SPLIT the port is picked from here on by dragging toward a port
-      // end (the live sector switching in dragMove), exactly as before.
-      closeMenu();
-      const n = p.placed[m.id];
-      let idx = 0;
-      if (n && n.type === 'split') {
-        const a = anchorOf(m.id, angleRef.current);
-        idx = pickSplitPort3(
-          [!!p.conns[m.id + ':0'], !!p.conns[m.id + ':1'], !!p.conns[m.id + ':2']],
-          (Math.atan2(pt.y - a.y, pt.x - a.x) * 180) / Math.PI,
-          Math.hypot(pt.x - a.x, pt.y - a.y),
-          -1,
-          splitPortAngles(angleRef.current),
-        );
-      }
-      startDrag(m.id + ':' + idx, pointerId, false, null, m.heldTile);
-      dragMove(clientX, clientY, pointerId);
-      return;
-    }
-    if (active === 'move') {
-      closeMenu();
-      const cell = pickCell(pt.x, pt.y, angleRef.current);
-      const mv: MoveState = { id: m.id, pointerId, anchor: cell, valid: moveValidity(m.id, cell) };
-      moveRef.current = mv;
-      setMoveSt(mv);
-      return;
-    }
     if (active !== m.active) {
       const nm: MenuState = { ...m, active };
       menuRef.current = nm;
@@ -600,9 +589,9 @@ export default function Board(props: BoardProps) {
     return spliceConns(foreign, anchor, node.type, placedWithout, obstacles) !== null;
   }
 
-  function moveMove(clientX: number, clientY: number, pointerId: number) {
+  function moveMove(clientX: number, clientY: number) {
     const mv = moveRef.current;
-    if (!mv || mv.pointerId !== pointerId) return;
+    if (!mv) return;
     const pt = evtPoint(clientX, clientY);
     if (!pt) return;
     const cell = pickCell(pt.x, pt.y, angleRef.current);
@@ -612,8 +601,64 @@ export default function Board(props: BoardProps) {
     setMoveSt(nm);
   }
 
+  /** Drop the carried machine at the click point (follow-mode Move commit). An invalid or unchanged anchor just puts it back. */
+  function commitFollowMove(clientX: number, clientY: number) {
+    moveMove(clientX, clientY);
+    const mv = moveRef.current;
+    moveRef.current = null;
+    setMoveSt(null);
+    if (!mv || !mv.anchor || !mv.valid || mv.anchor === mv.id) return;
+    const p = propsRef.current;
+    const node = p.placed[mv.id];
+    if (!node) return;
+    const placedWithout: Record<string, NodeDef> = { ...p.placed };
+    delete placedWithout[mv.id];
+    const next = rerouteMovedConns(
+      p.conns,
+      placedWithout,
+      mv.id,
+      mv.anchor,
+      node,
+      p.level.railLimit,
+      new Set(p.obstacles ?? []),
+    );
+    p.onMoveNode(mv.id, mv.anchor, next);
+  }
+
+  /** Abandon any follow-mode session (Esc / right-click): nothing was ever written, so the board is untouched. */
+  function cancelFollow() {
+    if (dragRef.current) {
+      dragRef.current = null;
+      setDrag(null);
+      propsRef.current.onDragRails(null);
+    }
+    if (moveRef.current) {
+      moveRef.current = null;
+      setMoveSt(null);
+    }
+  }
+
   function handlePointerDown(e: ReactPointerEvent<SVGSVGElement>) {
-    if (propsRef.current.running || dragRef.current) return;
+    if (propsRef.current.running) return;
+    // Follow mode: a belt or a carried machine is waiting, hands-free.
+    // This click IS the action — it plants the belt / drops the machine at
+    // the click point. A right-click cancels the session instead.
+    if (dragRef.current?.follow || moveRef.current?.follow) {
+      e.preventDefault();
+      downRef.current = null;
+      if (e.button === 2) {
+        cancelFollow();
+        return;
+      }
+      if (dragRef.current?.follow) {
+        dragMove(e.clientX, e.clientY, e.pointerId);
+        finishDrag();
+      } else {
+        commitFollowMove(e.clientX, e.clientY);
+      }
+      return;
+    }
+    if (dragRef.current || menuRef.current) return;
     const pt = evtPoint(e.clientX, e.clientY);
     if (!pt) return;
     lastPointerRef.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
@@ -670,9 +715,11 @@ export default function Board(props: BoardProps) {
       return;
     }
 
-    // Hold on a machine body: a short press stays a click. A completed hold
-    // on a placed, unlocked machine opens the action menu (Delete / Move /
-    // Rail); INPUT and locked machines keep the direct hold-to-draw belt.
+    // Hold on a machine body: a short press is a plain click and does
+    // nothing to a placed machine (removing one lives in the hold menu
+    // only). A completed hold on a placed, unlocked machine opens the
+    // action menu (Delete / Move / Rail); INPUT and locked machines keep
+    // the direct hold-to-draw belt.
     const isSource = mach !== null && (mach === 'IN' || !!p.placed[mach]);
     if (mach && isSource) {
       const n = p.placed[mach];
@@ -737,7 +784,7 @@ export default function Board(props: BoardProps) {
         return;
       }
       if (moveRef.current) {
-        moveMove(e.clientX, e.clientY, e.pointerId);
+        moveMove(e.clientX, e.clientY);
         return;
       }
       const cam = camRef.current;
@@ -761,38 +808,61 @@ export default function Board(props: BoardProps) {
     function onUp(e: PointerEvent) {
       if (camRef.current && e.pointerId === camRef.current.pointerId) camRef.current = null;
       if (dragRef.current) {
-        finishDrag();
+        // Releasing the starting press never plants the belt: the drag
+        // turns hands-free (follow mode) and the NEXT click plants it.
+        const d = dragRef.current;
+        if (!d.follow && e.pointerId === d.pointerId) {
+          const nd: DragState = { ...d, follow: true };
+          dragRef.current = nd;
+          setDrag(nd);
+        }
         return;
       }
       if (menuRef.current && e.pointerId === menuRef.current.pointerId) {
         const m = menuRef.current;
         closeMenu();
-        // Delete commits on release; Rail/Move already became drags while sliding.
-        if (m.active === 'delete') propsRef.current.onUnplace(m.id);
+        const p = propsRef.current;
+        // The armed action fires now, on release — never mid-press.
+        if (m.active === 'delete') {
+          p.onUnplace(m.id);
+        } else if (m.active === 'move') {
+          const pt = evtPoint(e.clientX, e.clientY);
+          const cell = pt ? pickCell(pt.x, pt.y, angleRef.current) : null;
+          const mv: MoveState = {
+            id: m.id,
+            pointerId: e.pointerId,
+            anchor: cell,
+            valid: moveValidity(m.id, cell),
+            follow: true,
+          };
+          moveRef.current = mv;
+          setMoveSt(mv);
+        } else if (m.active === 'rail') {
+          // The belt starts in follow mode: it tracks the cursor hands-free
+          // and the next click plants it. For a SPLIT the port is
+          // preselected from the release direction; the live sector
+          // switching in dragMove keeps following the cursor from here.
+          const pt = evtPoint(e.clientX, e.clientY);
+          const n = p.placed[m.id];
+          let idx = 0;
+          if (n && n.type === 'split' && pt) {
+            const a = anchorOf(m.id, angleRef.current);
+            idx = pickSplitPort3(
+              [!!p.conns[m.id + ':0'], !!p.conns[m.id + ':1'], !!p.conns[m.id + ':2']],
+              (Math.atan2(pt.y - a.y, pt.x - a.x) * 180) / Math.PI,
+              Math.hypot(pt.x - a.x, pt.y - a.y),
+              -1,
+              splitPortAngles(angleRef.current),
+            );
+          }
+          startDrag(m.id + ':' + idx, e.pointerId, false, null, m.heldTile, true);
+          dragMove(e.clientX, e.clientY, e.pointerId);
+        }
         return;
       }
-      if (moveRef.current && e.pointerId === moveRef.current.pointerId) {
-        const mv = moveRef.current;
-        moveRef.current = null;
-        setMoveSt(null);
-        if (mv.anchor && mv.valid && mv.anchor !== mv.id) {
-          const p = propsRef.current;
-          const node = p.placed[mv.id];
-          if (node) {
-            const placedWithout: Record<string, NodeDef> = { ...p.placed };
-            delete placedWithout[mv.id];
-            const next = rerouteMovedConns(
-              p.conns,
-              placedWithout,
-              mv.id,
-              mv.anchor,
-              node,
-              p.level.railLimit,
-              new Set(p.obstacles ?? []),
-            );
-            p.onMoveNode(mv.id, mv.anchor, next);
-          }
-        }
+      if (moveRef.current) {
+        // Follow-mode Move ignores releases: it ends on the planting
+        // click (handlePointerDown), Esc, or a right-click.
         return;
       }
       cancelHold();
@@ -808,10 +878,9 @@ export default function Board(props: BoardProps) {
         p.onConnsChange(next, 'delete');
         return;
       }
-      if (info.mach) {
-        if (p.placed[info.mach] && !(p.lockedIds ?? []).includes(info.mach)) p.onUnplace(info.mach);
-        return;
-      }
+      // A plain click on a machine does nothing — removing or moving one
+      // lives in the hold menu, never on a stray click.
+      if (info.mach) return;
       if (info.cell) {
         if (!p.ghost) {
           p.onPlaceRejected(info.cell);
@@ -840,13 +909,20 @@ export default function Board(props: BoardProps) {
       }
       downRef.current = null;
     }
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return;
+      if (!menuRef.current && !dragRef.current && !moveRef.current) return;
+      onCancel();
+    }
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onCancel);
+    window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('keydown', onKey);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -870,7 +946,7 @@ export default function Board(props: BoardProps) {
       : false;
 
   return (
-    <svg id="board" viewBox="0 0 960 560" ref={props.svgRef} onPointerDown={handlePointerDown}>
+    <svg id="board" viewBox="0 0 960 560" ref={props.svgRef} onPointerDown={handlePointerDown} onContextMenu={(e) => e.preventDefault()}>
       <defs>
         <clipPath id="tokClip">
           <rect x={-20} y={-38} width={40} height={40} />
