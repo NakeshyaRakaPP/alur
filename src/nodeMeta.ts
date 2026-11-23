@@ -57,6 +57,9 @@ export function nodeLabel(n: NodeDef): { title: string; sub: string } {
     case 'transform':
       return { title: 'CHANGE', sub: 'becomes: ' + COLOR_NAME[n.to!] };
     case 'split':
+      // A generic rack SPLIT carries no preset colors: the player routes it
+      // per placed machine with the Route editor.
+      if (!n.color && !n.side) return { title: 'SPLIT', sub: 'you set the route' };
       return n.side
         ? {
             title: 'SPLIT',
@@ -91,6 +94,42 @@ export function splitRoutingOf(n: NodeDef): SplitRouting {
   return n.route ?? defaultSplitRouting(n);
 }
 
+/**
+ * The routing as a strict one-color-per-end assignment: every color gets
+ * exactly one end and no end repeats. Colors the raw routing leaves on
+ * the shared "other" end are dealt onto the free ends in R, B, G order.
+ * The Route editor works on this view; the engine keeps using the raw
+ * routing until the player actually changes something.
+ */
+export function exclusiveSplitRouting(n: NodeDef): SplitRouting {
+  const raw = splitRoutingOf(n);
+  const order: ColorCode[] = ['R', 'B', 'G'];
+  const byColor: Partial<Record<ColorCode, PortIdx>> = {};
+  const used = new Set<PortIdx>();
+  for (const c of order) {
+    const p = raw.byColor[c];
+    if (p !== undefined && !used.has(p)) {
+      byColor[c] = p;
+      used.add(p);
+    }
+  }
+  for (const c of order) {
+    if (byColor[c] !== undefined) continue;
+    const eff = raw.byColor[c] ?? raw.other;
+    if (!used.has(eff)) {
+      byColor[c] = eff;
+      used.add(eff);
+    }
+  }
+  for (const c of order) {
+    if (byColor[c] !== undefined) continue;
+    const free = ([0, 2, 1] as PortIdx[]).find((p) => !used.has(p));
+    byColor[c] = free ?? raw.other;
+    if (free !== undefined) used.add(free);
+  }
+  return { byColor, other: raw.other };
+}
+
 /** The out port a token of `color` leaves a SPLIT by, under its effective routing. */
 export function splitPortFor(n: NodeDef, color: ColorCode): PortIdx {
   const r = splitRoutingOf(n);
@@ -104,7 +143,7 @@ export function nodeColor(n: NodeDef): string {
     case 'transform':
       return COLOR_HEX[n.to!];
     case 'split':
-      return COLOR_HEX[n.color!];
+      return n.color ? COLOR_HEX[n.color] : '#F0A832';
     case 'tahan':
       return '#F0A832';
     case 'sort':

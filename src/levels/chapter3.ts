@@ -61,7 +61,7 @@ export const chapter3: Level[] = [
     par: 2,
     refRails: 6,
     railLimit: 12,
-    tray: [{ type: 'filter', color: 'G' }, { type: 'tahan', size: 3 }, { type: 'split', color: 'G' }],
+    tray: [{ type: 'filter', color: 'G' }, { type: 'tahan', size: 3 }, { type: 'split' }],
     solution: {
       placements: {
         '3,3': { type: 'filter', color: 'G' },
@@ -106,7 +106,7 @@ export const chapter3: Level[] = [
     par: 2,
     refRails: 15,
     railLimit: 24,
-    tray: [{ type: 'split', color: 'G' }, { type: 'split', color: 'B' }, { type: 'tahan', size: 3 }],
+    tray: [{ type: 'split' }, { type: 'split' }, { type: 'tahan', size: 3 }],
     solution: {
       placements: {
         '4,3': { type: 'split', color: 'G' },
@@ -121,14 +121,14 @@ export const chapter3: Level[] = [
     },
     altSolution: {
       placements: {
-        '4,3': { type: 'split', color: 'B' },
+        '4,3': { type: 'split', color: 'B', route: { byColor: { B: 1 }, other: 2 } },
         '6,1': { type: 'tahan', size: 3 },
       },
       connections: {
         'IN:0': { to: '4,3', path: ['1,3', '2,3', '3,3'] },
-        '4,3:1': { to: '6,1', path: ['5,3', '6,3', '6,2'] },
+        '4,3:2': { to: '6,1', path: ['5,3', '6,3', '6,2'] },
         '6,1:0': { to: 'A', path: ['8,1', '9,1'] },
-        '4,3:0': { to: 'B', path: ['4,4', '5,4', '6,4', '7,4', '8,4', '9,4', '10,4'] },
+        '4,3:1': { to: 'B', path: ['4,4', '5,4', '6,4', '7,4', '8,4', '9,4', '10,4'] },
       },
     },
   },
@@ -152,12 +152,12 @@ export const chapter3: Level[] = [
     refRails: 17,
     railLimit: 28,
     tray: [
-      { type: 'split', color: 'G', side: 'R' },
+      { type: 'split' },
       { type: 'tahan', size: 3 },
       { type: 'filter', color: 'R' },
       { type: 'transform', to: 'B' },
-      { type: 'split', color: 'G' },
-      { type: 'split', color: 'R' },
+      { type: 'split' },
+      { type: 'split' },
       { type: 'filter', color: 'G' },
     ],
     solution: {
@@ -180,7 +180,7 @@ export const chapter3: Level[] = [
       placements: {
         '3,3': { type: 'split', color: 'G' },
         '5,1': { type: 'tahan', size: 3 },
-        '5,5': { type: 'split', color: 'R' },
+        '5,5': { type: 'split', color: 'R', route: { byColor: { R: 2 }, other: 1 } },
         '7,5': { type: 'transform', to: 'B' },
         '4,6': { type: 'filter', color: 'G' },
       },
@@ -189,7 +189,7 @@ export const chapter3: Level[] = [
         '3,3:0': { to: '5,1', path: ['4,3', '5,3', '5,2'] },
         '5,1:0': { to: 'A', path: ['7,1', '8,1', '9,1'] },
         '3,3:1': { to: '5,5', path: ['3,4', '4,4', '5,4'] },
-        '5,5:0': { to: '7,5', path: ['6,5'] },
+        '5,5:2': { to: '7,5', path: ['6,5'] },
         '7,5:0': { to: 'B', path: ['8,5', '9,5'] },
         '5,5:1': { to: '4,6', path: ['5,6'] },
       },

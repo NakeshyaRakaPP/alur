@@ -15,7 +15,7 @@ export const chapter1: Level[] = [
     par: 1,
     refRails: 8,
     railLimit: 14,
-    tray: [{ type: 'filter', color: 'R' }, { type: 'split', color: 'R' }, { type: 'filter', color: 'G' }],
+    tray: [{ type: 'filter', color: 'R' }, { type: 'split' }, { type: 'filter', color: 'G' }],
     solution: {
       placements: {
         '4,3': { type: 'filter', color: 'R' },
@@ -90,7 +90,7 @@ export const chapter1: Level[] = [
     tray: [
       { type: 'filter', color: 'R' },
       { type: 'transform', to: 'G' },
-      { type: 'split', color: 'R' },
+      { type: 'split' },
       { type: 'filter', color: 'G' },
     ],
     solution: {
@@ -134,7 +134,7 @@ export const chapter1: Level[] = [
     railLimit: 14,
     tray: [
       { type: 'filter', color: 'R' },
-      { type: 'split', color: 'R' },
+      { type: 'split' },
       { type: 'filter', color: 'G' },
       { type: 'transform', to: 'G' },
       { type: 'filter', color: 'B' },
@@ -177,7 +177,7 @@ export const chapter1: Level[] = [
     tray: [
       { type: 'filter', color: 'R' },
       { type: 'transform', to: 'B' },
-      { type: 'split', color: 'R' },
+      { type: 'split' },
       { type: 'filter', color: 'G' },
       { type: 'filter', color: 'B' },
     ],

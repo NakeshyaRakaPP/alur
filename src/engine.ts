@@ -16,14 +16,20 @@ export type SimEvent =
   | { type: 'trash'; token: number; atId: string }
   | { type: 'arrive'; token: number; output: OutputId; color: ColorCode }
   | { type: 'store'; token: number; nodeId: string; held: number; capacity: number | null }
+  | { type: 'held'; nodeId: string; held: number }
   | { type: 'releaseStart'; nodeId: string }
   | { type: 'transformed'; token: number; color: ColorCode }
   | { type: 'pause'; ms: number };
 
 export type Emit = (e: SimEvent) => Promise<void>;
 
+/** A leak: output was still produced, but part of the stream never made it out. */
+export type Leak =
+  | { kind: 'stuck'; color: ColorCode; at: string; cell?: string }
+  | { kind: 'leftover'; nodeId: string; count: number };
+
 export type Verdict =
-  | { kind: 'win' }
+  | { kind: 'win'; leak?: Leak }
   | { kind: 'stuck'; color: ColorCode; at: string; cell?: string }
   | { kind: 'leftover'; nodeId: string; count: number }
   | { kind: 'package'; output: OutputId; size: number }
@@ -201,6 +207,7 @@ export async function simulate(
       await emit({ type: 'store', token: tok.id, nodeId: toId, held: mergeWaiting(toId), capacity: null });
       // Pancarkan pasangan selama sekurang-kurangnya dua antrean berisi:
       // konsumsi kepala dua antrean yang paling dulu terisi.
+      let paired = false;
       for (;;) {
         if (cancelled()) return;
         const ready = [...qs.entries()]
@@ -209,12 +216,16 @@ export async function simulate(
         if (ready.length < 2) break;
         ready[0][1].shift();
         ready[1][1].shift();
+        paired = true;
         const nt: Tok = { id: ++run.tokenSeq, color: n.to!, batchId: 0 };
         await emit({ type: 'spawnAt', token: nt.id, color: nt.color, nodeId: toId });
         await emit({ type: 'transformed', token: nt.id, color: nt.color });
         await travel(nt, toId, 0, { n: 0 });
         await emit({ type: 'pause', ms: 60 });
       }
+      // Pairing drained the queues without any new 'store' event — refresh
+      // the held count so the on-board label never shows a stale number.
+      if (paired) await emit({ type: 'held', nodeId: toId, held: mergeWaiting(toId) });
       return;
     }
   }
@@ -272,49 +283,66 @@ export async function simulate(
     return { kind: 'win' };
   }
 
-  // Urutan penilaian sama seperti proof: stuck, sisa tahan, aturan paket, target.
-  let verdict: Verdict;
-  if (run.stuck) {
-    verdict = { kind: 'stuck', color: run.stuck.color, at: run.stuck.at, cell: run.stuck.cell };
-  } else {
-    const slotOrder = Object.keys(placed).sort();
-    const leftoverTahan = slotOrder.find(
-      (id) => placed[id].type === 'tahan' && (tahanBuffers.get(id)?.length ?? 0) > 0,
-    );
-    const leftoverSort = slotOrder.find(
-      (id) => placed[id].type === 'sort' && (sortBuffers.get(id)?.length ?? 0) > 0,
-    );
-    const leftoverMerge = slotOrder.find(
-      (id) => placed[id].type === 'merge' && mergeWaiting(id) > 0,
-    );
-    const leftoverId = leftoverTahan ?? leftoverSort ?? leftoverMerge;
-    if (leftoverId) {
-      const count =
-        (tahanBuffers.get(leftoverId)?.length ?? 0) +
-        (sortBuffers.get(leftoverId)?.length ?? 0) +
-        mergeWaiting(leftoverId);
-      verdict = { kind: 'leftover', nodeId: leftoverId, count };
-    } else if (level.packageRule) {
-      let pkg: Verdict | null = null;
-      for (const o of Object.keys(level.packageRule) as OutputId[]) {
-        const size = level.packageRule[o]!;
-        const arr = run.arrivals[o] ?? [];
-        const groups = new Map<number, number>();
-        let bad = false;
-        for (const a of arr) {
-          if (!a.batchId) bad = true;
-          else groups.set(a.batchId, (groups.get(a.batchId) ?? 0) + 1);
+  // Kebocoran: token yang berhenti di tengah jalan (port keluarnya tidak
+  // tersambung / ujung belt terbuka), atau sisa token di dalam mesin.
+  const slotOrder = Object.keys(placed).sort();
+  const leftoverTahan = slotOrder.find(
+    (id) => placed[id].type === 'tahan' && (tahanBuffers.get(id)?.length ?? 0) > 0,
+  );
+  const leftoverSort = slotOrder.find(
+    (id) => placed[id].type === 'sort' && (sortBuffers.get(id)?.length ?? 0) > 0,
+  );
+  const leftoverMerge = slotOrder.find(
+    (id) => placed[id].type === 'merge' && mergeWaiting(id) > 0,
+  );
+  const leftoverId = leftoverTahan ?? leftoverSort ?? leftoverMerge;
+  const leak: Leak | undefined = run.stuck
+    ? { kind: 'stuck', color: run.stuck.color, at: run.stuck.at, cell: run.stuck.cell }
+    : leftoverId
+      ? {
+          kind: 'leftover',
+          nodeId: leftoverId,
+          count:
+            (tahanBuffers.get(leftoverId)?.length ?? 0) +
+            (sortBuffers.get(leftoverId)?.length ?? 0) +
+            mergeWaiting(leftoverId),
         }
-        for (const v of groups.values()) if (v !== size) bad = true;
-        if (bad) {
-          pkg = { kind: 'package', output: o, size };
-          break;
-        }
+      : undefined;
+
+  // Aturan paket adalah bagian dari kontrak output itu sendiri (kedatangan
+  // harus berkelompok persis), jadi pelanggarannya tetap menggagalkan.
+  let pkg: Verdict | null = null;
+  if (level.packageRule) {
+    for (const o of Object.keys(level.packageRule) as OutputId[]) {
+      const size = level.packageRule[o]!;
+      const arr = run.arrivals[o] ?? [];
+      const groups = new Map<number, number>();
+      let bad = false;
+      for (const a of arr) {
+        if (!a.batchId) bad = true;
+        else groups.set(a.batchId, (groups.get(a.batchId) ?? 0) + 1);
       }
-      verdict = pkg ?? checkTargets();
-    } else {
-      verdict = checkTargets();
+      for (const v of groups.values()) if (v !== size) bad = true;
+      if (bad) {
+        pkg = { kind: 'package', output: o, size };
+        break;
+      }
     }
+  }
+
+  // Kontrak level adalah outputnya: target tercapai persis (dan aturan
+  // paket utuh) berarti LOLOS — kebocoran hanya dicatat sebagai catatan
+  // bocor, bukan kegagalan. Bila target meleset, laporan kegagalan tetap
+  // menunjuk sebab paling berguna: bocor berhenti, sisa mesin, paket, lalu
+  // selisih output.
+  const target = checkTargets();
+  let verdict: Verdict;
+  if (target.kind === 'win' && !pkg) {
+    verdict = leak ? { kind: 'win', leak } : { kind: 'win' };
+  } else if (leak) {
+    verdict = leak;
+  } else {
+    verdict = pkg ?? target;
   }
 
   return { arrivals: run.arrivals, hops: run.hops, verdict, aborted: cancelled() };

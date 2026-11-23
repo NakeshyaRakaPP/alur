@@ -36,16 +36,16 @@ const CFG: Record<string, ExpertCfg> = {
   },
   'c2-1': {
     obstacles: ['7,3', '8,2', '8,4'],
-    tray: [{ type: 'split', color: 'R' }],
+    tray: [{ type: 'split' }],
   },
   'c2-2': {
     obstacles: ['5,3', '8,3', '5,2'],
     locked: { '7,1': { type: 'transform', to: 'G' } },
-    tray: [{ type: 'split', color: 'R' }],
+    tray: [{ type: 'split' }],
   },
   'c2-3': {
     obstacles: ['10,2', '5,3', '3,2'],
-    tray: [{ type: 'split', color: 'R' }, { type: 'transform', to: 'G' }],
+    tray: [{ type: 'split' }, { type: 'transform', to: 'G' }],
   },
   'c2-4': {
     obstacles: ['3,2', '3,4'],
@@ -54,7 +54,7 @@ const CFG: Record<string, ExpertCfg> = {
   'c2-5': {
     obstacles: ['3,2', '3,4', '6,3'],
     locked: { '7,4': { type: 'transform', to: 'B' } },
-    tray: [{ type: 'split', color: 'G' }],
+    tray: [{ type: 'split' }],
   },
   'c3-1': {
     obstacles: ['3,2', '3,4', '7,2'],
@@ -67,7 +67,7 @@ const CFG: Record<string, ExpertCfg> = {
   },
   'c3-3': {
     obstacles: ['5,3', '8,3', '3,5'],
-    tray: [{ type: 'split', color: 'G' }, { type: 'tahan', size: 3 }],
+    tray: [{ type: 'split' }, { type: 'tahan', size: 3 }],
   },
   'c3-4': {
     obstacles: ['5,3', '7,3', '6,2'],
@@ -91,7 +91,7 @@ const CFG: Record<string, ExpertCfg> = {
     // sel yang tidak dipakai rute referensi mana pun.
     obstacles: ['2,2', '2,4'],
     locked: { '6,3': { type: 'merge', to: 'G' } },
-    tray: [{ type: 'split', color: 'R' }, { type: 'tahan', size: 3 }],
+    tray: [{ type: 'split' }, { type: 'tahan', size: 3 }],
   },
   'c4-3': {
     // Rintangan '4,3' dipindah ke '2,2': di solusi 3-port, sel 4,3 adalah
@@ -101,7 +101,7 @@ const CFG: Record<string, ExpertCfg> = {
     obstacles: ['2,2', '5,2', '7,4'],
     locked: { '6,3': { type: 'merge', to: 'G' } },
     tray: [
-      { type: 'split', color: 'G', side: 'R' },
+      { type: 'split' },
       { type: 'filter', color: 'B' },
     ],
   },
@@ -118,7 +118,7 @@ const CFG: Record<string, ExpertCfg> = {
   'c5-1': {
     obstacles: ['2,2', '2,4', '6,4'],
     tray: [
-      { type: 'split', color: 'R', side: 'G' },
+      { type: 'split' },
       { type: 'transform', to: 'B' },
       { type: 'tahan', size: 2 },
       { type: 'filter', color: 'G' },
@@ -127,7 +127,7 @@ const CFG: Record<string, ExpertCfg> = {
   'c5-2': {
     obstacles: ['2,2', '8,2', '8,4'],
     tray: [
-      { type: 'split', color: 'B' },
+      { type: 'split' },
       { type: 'transform', to: 'R' },
       { type: 'merge', to: 'G' },
     ],
@@ -144,7 +144,7 @@ const CFG: Record<string, ExpertCfg> = {
     obstacles: ['2,2', '2,4', '9,2'],
     tray: [
       { type: 'sort', order: ['R', 'B', 'G'] },
-      { type: 'split', color: 'R', side: 'B' },
+      { type: 'split' },
       { type: 'transform', to: 'G' },
       { type: 'tahan', size: 2 },
     ],
@@ -152,7 +152,7 @@ const CFG: Record<string, ExpertCfg> = {
   'c5-5': {
     obstacles: ['2,2', '9,2', '2,4'],
     tray: [
-      { type: 'split', color: 'G', side: 'R' },
+      { type: 'split' },
       { type: 'filter', color: 'B' },
       { type: 'merge', to: 'G' },
       { type: 'tahan', size: 2 },

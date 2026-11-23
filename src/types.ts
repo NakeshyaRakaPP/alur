@@ -29,10 +29,13 @@ export interface NodeDef {
   /** sort: color order used when tokens are released */
   order?: ColorCode[];
   /**
-   * split only: routing set by the player for this placed instance (Route
-   * editor). Level/tray/solution defs leave it unset — the engine then
-   * derives the routing from the named colors (see defaultSplitRouting).
-   * Removing the machine discards it.
+   * split only: explicit routing for this instance. On a placed machine it
+   * is set by the player (Route editor) or stamped at placement time;
+   * tray defs never carry one. Solution defs usually leave it unset — the
+   * engine then derives the routing from the named colors (see
+   * defaultSplitRouting) — but a solution whose belts leave by other sides
+   * than the color default (v6.6: a port is a physical side) states its
+   * routing explicitly here. Removing a machine discards it.
    */
   route?: SplitRouting;
 }

@@ -5,7 +5,7 @@ import { computeMetrics, isBetter, simulate, starsFor, starsForExpert } from '..
 import type { Emit, Verdict } from '../engine';
 import { sfx } from '../audio/sfx';
 import { anchorOf, camBasis, connPoints, portPos, railsUsed, screenToGridFloat } from '../geometry';
-import { COLOR_HEX, COLOR_NAME, COLOR_NAME_ID, BELT_IMG, NODE_IMG, TOKEN_IMG, nodeKey, nodeLabel, nodeName, splitRoutingOf } from '../nodeMeta';
+import { COLOR_HEX, COLOR_NAME, COLOR_NAME_ID, BELT_IMG, NODE_IMG, TOKEN_IMG, nodeKey, nodeLabel, nodeName, splitRoutingOf, exclusiveSplitRouting } from '../nodeMeta';
 import type { ColorCode, Conns, Level, Metrics, NodeDef, OutputId, PlacedNode, PortIdx, SplitRouting } from '../types';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -24,7 +24,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 type ResultState =
-  | { win: true; metrics: Metrics; stars: number; rails: number; par: number; refRails: number; isNewBest: boolean; prevBest: Metrics | null }
+  | { win: true; metrics: Metrics; stars: number; rails: number; par: number; refRails: number; isNewBest: boolean; prevBest: Metrics | null; leakText?: string }
   | { win: false; verdict: Verdict; placed: Record<string, NodeDef> };
 
 type Lang = 'en' | 'id';
@@ -445,6 +445,12 @@ export default function GameScreen({
         sfx.bufferRelease();
         setBufLabels((prev) => ({ ...prev, [e.nodeId]: '' }));
         break;
+      case 'held':
+        setBufLabels((prev) => ({
+          ...prev,
+          [e.nodeId]: e.held > 0 ? `stored ${e.held}` : '',
+        }));
+        break;
       case 'transformed': {
         sfx.transform();
         const vis = tokensRef.current.get(e.token);
@@ -495,9 +501,18 @@ export default function GameScreen({
     if (res.verdict.kind === 'win') {
       sfx.win();
       const metrics = computeMetrics(defs, res.hops);
-      const stars = expert
+      // A win with a leak still passes — the output contract was met — but
+      // it is not a clean system, so it caps at two stars.
+      const leak = res.verdict.leak;
+      let stars = expert
         ? starsForExpert(expertRefNodes, expertRefRails, expert.railLimit, metrics, railsUsed(conns))
         : starsFor(level, metrics, railsUsed(conns));
+      if (leak) stars = Math.min(stars, 2);
+      const leakText = !leak
+        ? undefined
+        : leak.kind === 'stuck'
+          ? `But a ${COLOR_NAME[leak.color]} token stopped at ${nodeName(leak.at, defs)} — it never got out, so this run caps at two stars.`
+          : `But ${leak.count} token(s) stayed inside ${nodeLabel(defs[leak.nodeId]).title} — never sent out, so this run caps at two stars.`;
       setResult({
         win: true,
         metrics,
@@ -507,6 +522,7 @@ export default function GameScreen({
         refRails: expert ? expertRefRails : (level.refRails ?? railsUsed(level.solution.connections)),
         isNewBest: isBetter(metrics, best),
         prevBest: best,
+        leakText,
       });
       setWon(true);
       setShowStamp(true);
@@ -571,7 +587,42 @@ export default function GameScreen({
     if (i < 0) return;
     const node = trayState[i];
     setTrayState(trayState.filter((_, j) => j !== i));
-    setPlaced({ ...placed, [cell]: node });
+    // A generic rack SPLIT is born with a starter route that spreads the
+    // colors one per end — the level's first color up, second by the
+    // middle end, third down, and any color the level never produces
+    // dealt onto an end still free — and the player adjusts it per
+    // machine in the Route editor.
+    let placedNode: PlacedNode = node;
+    if (node.type === 'split' && !node.color && !node.route && level.stream.length) {
+      const colorOrder: ColorCode[] = [];
+      for (const c of level.stream) if (!colorOrder.includes(c)) colorOrder.push(c);
+      const defs = [
+        ...(expert ? expert.tray : level.tray),
+        ...(expert ? Object.values(expert.locked) : []),
+      ];
+      for (const d of defs) {
+        if ((d.type === 'transform' || d.type === 'merge') && d.to && !colorOrder.includes(d.to)) {
+          colorOrder.push(d.to);
+        }
+      }
+      const byColor: Partial<Record<ColorCode, PortIdx>> = {};
+      const portOrder: PortIdx[] = [0, 2, 1];
+      colorOrder.slice(0, 3).forEach((c, i) => {
+        byColor[c] = portOrder[i];
+      });
+      // Deal any color the level never produces onto the ends still free,
+      // so the machine's routing is a complete one-color-per-end spread.
+      const usedPorts = new Set(Object.values(byColor));
+      for (const c of ['R', 'B', 'G'] as ColorCode[]) {
+        if (byColor[c] !== undefined) continue;
+        const free = portOrder.find((p) => !usedPorts.has(p));
+        if (free === undefined) break;
+        byColor[c] = free;
+        usedPorts.add(free);
+      }
+      placedNode = { ...node, route: { byColor, other: 1 } };
+    }
+    setPlaced({ ...placed, [cell]: placedNode });
     // Dropped onto a running belt: the board already split the belt around
     // the machine — adopt the spliced connections as-is.
     if (splice) setConns(splice);
@@ -653,33 +704,29 @@ export default function GameScreen({
     setPlaced((prev) => {
       const n = prev[routeEditId];
       if (!n || n.type !== 'split') return prev;
-      const cur = splitRoutingOf(n);
-      const next: SplitRouting = { byColor: { ...cur.byColor }, other: cur.other };
-      if (key === 'other') next.other = port;
-      else next.byColor[key] = port;
-      return { ...prev, [routeEditId]: { ...n, route: next } };
+      if (key === 'other') {
+        const cur = splitRoutingOf(n);
+        return { ...prev, [routeEditId]: { ...n, route: { byColor: { ...cur.byColor }, other: port } } };
+      }
+      // One color per end: moving a color onto an occupied end swaps the
+      // two colors — the displaced color takes the moved color's old end.
+      const cur = exclusiveSplitRouting(n);
+      const from = cur.byColor[key] ?? cur.other;
+      if (from === port) return prev;
+      const byColor = { ...cur.byColor };
+      const occupant = (Object.keys(byColor) as ColorCode[]).find((c) => byColor[c] === port);
+      byColor[key] = port;
+      if (occupant && occupant !== key) byColor[occupant] = from;
+      return { ...prev, [routeEditId]: { ...n, route: { byColor, other: cur.other } } };
     });
     sfx.select();
     touchEdit();
   }
 
   const editNode = routeEditId ? placed[routeEditId] ?? null : null;
-  const editRouting = editNode && editNode.type === 'split' ? splitRoutingOf(editNode) : null;
-  /** Colors worth a row in the editor: the incoming stream plus every color a CHANGE/MERGE in this level can produce (plus the split's own named colors). */
-  const routeColors = ((): ColorCode[] => {
-    const set = new Set<ColorCode>(level.stream);
-    const defs = [
-      ...(expert ? expert.tray : level.tray),
-      ...(expert ? Object.values(expert.locked) : []),
-      ...Object.values(placed),
-    ];
-    for (const d of defs) {
-      if ((d.type === 'transform' || d.type === 'merge') && d.to) set.add(d.to);
-    }
-    if (editNode?.color) set.add(editNode.color);
-    if (editNode?.side) set.add(editNode.side);
-    return (['R', 'B', 'G'] as ColorCode[]).filter((c) => set.has(c));
-  })();
+  const editRouting = editNode && editNode.type === 'split' ? exclusiveSplitRouting(editNode) : null;
+  /** The game has exactly three colors; the Route editor always offers all of them. */
+  const ALL_COLORS: ColorCode[] = ['R', 'B', 'G'];
 
   const selNode = selTray !== null ? trayState.find((n) => n.uid === selTray) ?? null : null;
   const railsNow = dragRails ?? railsUsed(conns);
@@ -896,42 +943,29 @@ export default function GameScreen({
                     ✕
                   </button>
                 </div>
-                {routeColors.map((c) => (
-                  <div className="route-row" key={c}>
-                    <span className="route-color">
-                      <span className="route-swatch" style={{ background: COLOR_HEX[c] }} />
-                      {COLOR_NAME[c]}
-                    </span>
-                    <span className="route-seg" role="group" aria-label={COLOR_NAME[c] + ' exit port'}>
-                      {(['UP', 'DOWN', 'SIDE'] as const).map((label, i) => (
+                {(
+                  [
+                    { port: 0 as PortIdx, label: 'UP' },
+                    { port: 2 as PortIdx, label: 'MIDDLE' },
+                    { port: 1 as PortIdx, label: 'DOWN' },
+                  ]
+                ).map(({ port, label }) => (
+                  <div className="route-row" key={label}>
+                    <span className="route-port">{label}</span>
+                    <span className="route-seg" role="group" aria-label={label + ' end color'}>
+                      {ALL_COLORS.map((c) => (
                         <button
-                          key={label}
-                          className={(editRouting.byColor[c] ?? editRouting.other) === i ? 'active' : ''}
-                          onClick={() => updateRoute(c, i as PortIdx)}
+                          key={c}
+                          className={(editRouting.byColor[c] ?? editRouting.other) === port ? 'active' : ''}
+                          onClick={() => updateRoute(c, port)}
                         >
-                          {label}
+                          <span className="route-swatch" style={{ background: COLOR_HEX[c] }} />
+                          {COLOR_NAME[c]}
                         </button>
                       ))}
                     </span>
                   </div>
                 ))}
-                <div className="route-row">
-                  <span className="route-color">
-                    <span className="route-swatch any" />
-                    Any other color
-                  </span>
-                  <span className="route-seg" role="group" aria-label="Any other color exit port">
-                    {(['UP', 'DOWN', 'SIDE'] as const).map((label, i) => (
-                      <button
-                        key={label}
-                        className={editRouting.other === i ? 'active' : ''}
-                        onClick={() => updateRoute('other', i as PortIdx)}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </span>
-                </div>
               </div>
             </div>
           )}
@@ -991,7 +1025,7 @@ export default function GameScreen({
 }
 
 function renderWin(
-  r: { metrics: Metrics; stars: number; rails: number; par: number; refRails: number; isNewBest: boolean; prevBest: Metrics | null },
+  r: { metrics: Metrics; stars: number; rails: number; par: number; refRails: number; isNewBest: boolean; prevBest: Metrics | null; leakText?: string },
 ): ReactNode {
   const m = r.metrics;
   const nodeOver = m.node > r.par;
@@ -1016,8 +1050,14 @@ function renderWin(
         ))}
       </span>
       <br />
-      <b>It works.</b> All tokens on target
+      <b>It works.</b> {r.leakText ? 'All targets hit' : 'All tokens on target'}
       {hint}
+      {r.leakText ? (
+        <>
+          <br />
+          <span>{r.leakText}</span>
+        </>
+      ) : null}
       <br />
       <span className="metrics">
         Node: <b>{m.node}</b> · Space: <b>{m.ruang} cells</b> · Token steps: <b>{m.langkah}</b>

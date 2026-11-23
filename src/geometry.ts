@@ -2,7 +2,7 @@
 // and the pure belt-drag logic. Ported from the v6.5 iso proof (DRAGCORE +
 // ISO blocks) — no DOM access in this module.
 
-import type { BeltConn, Conns, NodeDef, NodeType } from './types';
+import type { BeltConn, Conns, NodeDef, NodeType, PortIdx } from './types';
 
 export interface Point {
   x: number;
@@ -829,6 +829,72 @@ export function findMachineExitPath(opts: {
   const fromHeld = findBeltPath({ ...opts, srcCells: [held] });
   if (fromHeld.path && wide.path && fromHeld.path.length <= wide.path.length) return fromHeld;
   return wide;
+}
+
+// ---- SPLIT exits: a port is a physical side of the machine ----
+// A belt out of a SPLIT always leaves by its own port's grid step — port 0
+// north (−r), port 1 south (+r), port 2 east (+c); the west step is the
+// input side. The port a connection belongs to is therefore readable from
+// the belt itself: the side its first cell sits on IS the port, and the
+// auto-router may never sneak a port's belt out of another side just
+// because that route happens to be shorter.
+
+/** Grid step (dc, dr) each SPLIT out port leaves by, indexed by port. */
+export const SPLIT_PORT_STEPS: ReadonlyArray<{ dc: number; dr: number }> = [
+  { dc: 0, dr: -1 },
+  { dc: 0, dr: 1 },
+  { dc: 1, dr: 0 },
+];
+
+/** The cell a belt out of `port` of the SPLIT at `anchor` must start on, or null when that side is off the board. */
+export function splitExitCell(anchor: string, port: PortIdx): string | null {
+  const a = parseCell(anchor);
+  const s = SPLIT_PORT_STEPS[port];
+  const c = a.c + s.dc;
+  const r = a.r + s.dr;
+  if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return null;
+  return cellKey(c, r);
+}
+
+/**
+ * Route a belt out of one SPLIT port. Same contract as findBeltPath, except
+ * the first cell is fixed: the belt starts on the port's own exit cell and
+ * only then takes the shortest legal route onward. A target machine sitting
+ * exactly on the exit cell is the direct (empty-path) case; an exit cell
+ * blocked by anything else means this port cannot be drawn from at all.
+ */
+export function findSplitExitPath(opts: {
+  /** Anchor cell of the SPLIT (it is a 1-tile machine). */
+  anchor: string;
+  /** The port being drawn. */
+  port: PortIdx;
+  /** Acceptable final belt cells (free cells, e.g. the cursor cell or a target machine's doorstep cells). */
+  goalCells: string[];
+  /** When the belt runs straight into a machine: if the target footprint covers the exit cell, an empty path is the valid route. */
+  directCells?: string[];
+  /** Cells the belt may never enter (machine footprints, other belts, obstacles, off-board is implicit). */
+  blocked: Set<string>;
+  /** Remaining rails the route may use; may be Infinity. */
+  budget: number;
+}): BeltPathResult {
+  const { anchor, port, goalCells, directCells, blocked, budget } = opts;
+  const exit = splitExitCell(anchor, port);
+  if (exit === null) return { path: null, overBudget: false };
+  if (directCells && directCells.indexOf(exit) >= 0) return { path: [], overBudget: false };
+  if (blocked.has(exit)) return { path: null, overBudget: false };
+  if (goalCells.indexOf(exit) >= 0) return { path: [exit], overBudget: 1 > budget };
+  const inner = new Set(blocked);
+  inner.add(anchor);
+  inner.add(exit);
+  const sub = findBeltPath({
+    srcCells: [exit],
+    goalCells,
+    directCells,
+    blocked: inner,
+    budget: budget - 1,
+  });
+  if (!sub.path) return { path: null, overBudget: false };
+  return { path: [exit, ...sub.path], overBudget: sub.overBudget };
 }
 
 export interface TrailExtensionResult {

@@ -21,11 +21,11 @@ export const chapter5: Level[] = [
     refRails: 16,
     railLimit: 26,
     tray: [
-      { type: 'split', color: 'R', side: 'G' },
+      { type: 'split' },
       { type: 'transform', to: 'B' },
       { type: 'tahan', size: 2 },
       { type: 'filter', color: 'G' },
-      { type: 'split', color: 'B', side: 'R' },
+      { type: 'split' },
     ],
     solution: {
       placements: {
@@ -75,8 +75,8 @@ export const chapter5: Level[] = [
     refRails: 11,
     railLimit: 18,
     tray: [
-      { type: 'split', color: 'B' },
-      { type: 'split', color: 'G' },
+      { type: 'split' },
+      { type: 'split' },
       { type: 'transform', to: 'R' },
       { type: 'merge', to: 'G' },
     ],
@@ -129,11 +129,11 @@ export const chapter5: Level[] = [
     refRails: 26,
     railLimit: 42,
     tray: [
-      { type: 'split', color: 'G', side: 'R' },
+      { type: 'split' },
       { type: 'tahan', size: 3 },
       { type: 'transform', to: 'B' },
-      { type: 'split', color: 'G' },
-      { type: 'split', color: 'R' },
+      { type: 'split' },
+      { type: 'split' },
     ],
     solution: {
       placements: {
@@ -154,7 +154,7 @@ export const chapter5: Level[] = [
       placements: {
         '4,3': { type: 'split', color: 'G' },
         '2,1': { type: 'tahan', size: 3 },
-        '4,5': { type: 'split', color: 'R' },
+        '4,5': { type: 'split', color: 'R', route: { byColor: { R: 2 }, other: 1 } },
         '7,5': { type: 'transform', to: 'B' },
       },
       connections: {
@@ -162,7 +162,7 @@ export const chapter5: Level[] = [
         '4,3:0': { to: '2,1', path: ['4,2', '3,2'] },
         '2,1:0': { to: 'A', path: ['4,1', '5,1', '6,1', '7,1', '8,1', '9,1'] },
         '4,3:1': { to: '4,5', path: ['4,4'] },
-        '4,5:0': { to: '7,5', path: ['5,5', '6,5'] },
+        '4,5:2': { to: '7,5', path: ['5,5', '6,5'] },
         '7,5:0': { to: 'B', path: ['8,5', '9,5'] },
         '4,5:1': { to: 'B', path: ['4,6', '5,6', '6,6', '7,6', '8,6', '9,6', '10,6'] },
       },
@@ -189,14 +189,14 @@ export const chapter5: Level[] = [
     railLimit: 21,
     tray: [
       { type: 'sort', order: ['R', 'B', 'G'] },
-      { type: 'split', color: 'R', side: 'B' },
+      { type: 'split' },
       { type: 'transform', to: 'G' },
       { type: 'tahan', size: 2 },
     ],
     solution: {
       placements: {
         '3,3': { type: 'sort', order: ['R', 'B', 'G'] },
-        '6,3': { type: 'split', color: 'R', side: 'B' },
+        '6,3': { type: 'split', color: 'R', side: 'B', route: { byColor: { R: 0, B: 1 }, other: 2 } },
         '6,1': { type: 'transform', to: 'G' },
         '8,1': { type: 'tahan', size: 2 },
       },
@@ -206,13 +206,13 @@ export const chapter5: Level[] = [
         '6,3:0': { to: '6,1', path: ['6,2'] },
         '6,1:0': { to: '8,1', path: ['7,1'] },
         '8,1:0': { to: 'A', path: [] },
-        '6,3:1': { to: 'OUT', path: ['7,3', '8,3', '9,3'] },
-        '6,3:2': { to: 'B', path: ['6,4', '7,4', '8,4', '9,4', '10,4'] },
+        '6,3:2': { to: 'OUT', path: ['7,3', '8,3', '9,3'] },
+        '6,3:1': { to: 'B', path: ['6,4', '7,4', '8,4', '9,4', '10,4'] },
       },
     },
     altSolution: {
       placements: {
-        '3,3': { type: 'split', color: 'R', side: 'B' },
+        '3,3': { type: 'split', color: 'R', side: 'B', route: { byColor: { R: 0, B: 1 }, other: 2 } },
         '3,1': { type: 'transform', to: 'G' },
         '7,1': { type: 'tahan', size: 2 },
       },
@@ -221,8 +221,8 @@ export const chapter5: Level[] = [
         '3,3:0': { to: '3,1', path: ['3,2'] },
         '3,1:0': { to: '7,1', path: ['4,1', '5,1', '6,1'] },
         '7,1:0': { to: 'A', path: ['9,1'] },
-        '3,3:1': { to: 'OUT', path: ['4,3', '5,3', '6,3', '7,3', '8,3', '9,3'] },
-        '3,3:2': { to: 'B', path: ['3,4', '4,4', '5,4', '6,4', '7,4', '8,4', '9,4', '10,4'] },
+        '3,3:2': { to: 'OUT', path: ['4,3', '5,3', '6,3', '7,3', '8,3', '9,3'] },
+        '3,3:1': { to: 'B', path: ['3,4', '4,4', '5,4', '6,4', '7,4', '8,4', '9,4', '10,4'] },
       },
     },
   },
@@ -246,11 +246,11 @@ export const chapter5: Level[] = [
     refRails: 16,
     railLimit: 26,
     tray: [
-      { type: 'split', color: 'G', side: 'R' },
+      { type: 'split' },
       { type: 'filter', color: 'B' },
       { type: 'merge', to: 'G' },
       { type: 'tahan', size: 2 },
-      { type: 'split', color: 'R', side: 'B' },
+      { type: 'split' },
       { type: 'filter', color: 'R' },
     ],
     solution: {
@@ -306,12 +306,12 @@ export const chapter5: Level[] = [
     refRails: 15,
     railLimit: 24,
     tray: [
-      { type: 'split', color: 'G', side: 'R' },
+      { type: 'split' },
       { type: 'tahan', size: 3 },
       { type: 'merge', to: 'B' },
       { type: 'tahan', size: 3 },
-      { type: 'split', color: 'G' },
-      { type: 'split', color: 'R' },
+      { type: 'split' },
+      { type: 'split' },
     ],
     solution: {
       placements: {
@@ -334,7 +334,7 @@ export const chapter5: Level[] = [
       placements: {
         '3,3': { type: 'split', color: 'G' },
         '3,1': { type: 'tahan', size: 3 },
-        '4,5': { type: 'split', color: 'R' },
+        '4,5': { type: 'split', color: 'R', route: { byColor: { R: 2 }, other: 1 } },
         '6,5': { type: 'merge', to: 'B' },
         '8,5': { type: 'tahan', size: 3 },
       },
@@ -343,7 +343,7 @@ export const chapter5: Level[] = [
         '3,3:0': { to: '3,1', path: ['3,2'] },
         '3,1:0': { to: 'A', path: ['5,1', '6,1', '7,1', '8,1', '9,1'] },
         '3,3:1': { to: '4,5', path: ['4,3', '4,4'] },
-        '4,5:0': { to: '6,5', path: ['5,5'] },
+        '4,5:2': { to: '6,5', path: ['5,5'] },
         '4,5:1': { to: '6,5', path: ['4,6', '5,6', '6,6'] },
         '6,5:0': { to: '8,5', path: [] },
         '8,5:0': { to: 'B', path: [] },

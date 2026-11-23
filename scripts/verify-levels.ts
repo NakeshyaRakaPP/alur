@@ -6,14 +6,16 @@ import {
   cellsAdjacent,
   cellsAdjAny,
   findBeltPath,
+  findSplitExitPath,
   footprintCells,
   footprintCellsAt,
   parseCell,
   railsUsed,
+  splitExitCell,
 } from '../src/geometry';
 import { LEVELS } from '../src/levels';
 import { nodeKey } from '../src/nodeMeta';
-import type { ColorCode, Conns, Level, NodeDef, OutputId } from '../src/types';
+import type { ColorCode, Conns, Level, NodeDef, OutputId, PortIdx } from '../src/types';
 
 let failures = 0;
 
@@ -70,53 +72,161 @@ function checkGrid(opts: GridOpts): { rails: number; built: Conns } {
     }
   }
 
-  // Bangun tiap sambungan memakai auto-path persis seperti UI (findBeltPath):
-  // dari footprint sumber ke doorstep footprint tujuan, menghindari sel mesin,
-  // rintangan, dan jalur sambungan yang sudah dibangun sebelumnya. Urutan
-  // sambungan mengikuti data solusi; anggaran tiap sambungan = sisa rail
-  // setelah sambungan sebelumnya, sama seperti pemain yang menggambarnya
-  // satu per satu dengan mekanisme baru.
-  const built: Conns = {};
+  // Bangun tiap sambungan memakai auto-path persis seperti UI: dari
+  // footprint sumber ke doorstep footprint tujuan, menghindari sel mesin,
+  // rintangan, dan jalur sambungan yang sudah dibangun sebelumnya. Anggaran
+  // tiap sambungan = sisa rail setelah sambungan sebelumnya.
+  // Sejak v6.6 belt SPLIT wajib keluar lewat sel port-nya sendiri, jadi
+  // urutan menggambar ikut menentukan terbangun-tidaknya satu solusi —
+  // persis seperti di UI, tempat pemain bebas menggambar belt dalam urutan
+  // apa pun, menghapus, dan menggambar ulang. Harness mencoba urutan data,
+  // lalu sejumlah urutan acak deterministik (seed tetap), dan menerima
+  // urutan pertama yang membangun semuanya; sel keluar tiap port SPLIT
+  // yang belum digambar DIPESAN selama satu percobaan — belt lain
+  // menghindarinya, sama seperti pemain yang tahu mulut port harus tetap
+  // kosong.
   const machineCells = new Set(occupied.keys());
-  let builtRails = 0;
+  const isSplitKey = (k: string) => {
+    const d = placements[k.split(':')[0]];
+    return !!d && d.type === 'split';
+  };
+  const validKeys: string[] = [];
+  const preBuilt: Conns = {};
   for (const key of opts.order ?? Object.keys(conns)) {
     const conn = conns[key];
     if (!conn) continue;
     if (conn.to === null) {
       fail(label + ': ' + key + ': sambungan solusi berujung terbuka (solusi harus lengkap)');
+      preBuilt[key] = { to: null, path: [] };
       continue;
     }
     const srcId = key.split(':')[0];
-    if (srcId !== 'IN' && !placements[srcId]) fail(label + ': sumber sambungan tidak ada: ' + key);
+    let bad = false;
+    if (srcId !== 'IN' && !placements[srcId]) {
+      fail(label + ': sumber sambungan tidak ada: ' + key);
+      bad = true;
+    }
     if (!placements[conn.to] && !opts.outputs.includes(conn.to as OutputId)) {
       fail(label + ': tujuan sambungan tidak ada: ' + key + ' -> ' + conn.to);
+      bad = true;
     }
-    const blocked = new Set<string>(machineCells);
-    obstacles.forEach((c) => blocked.add(c));
-    for (const c2 of Object.values(built)) c2.path.forEach((c) => blocked.add(c));
-    const srcCells = footprintCells(srcId, placements);
-    const dstCells = footprintCells(conn.to, placements);
-    const res = findBeltPath({
-      srcCells,
-      goalCells: beltGoalCells(dstCells, blocked),
-      directCells: dstCells,
-      blocked,
-      budget: opts.railLimit - builtRails,
-    });
-    if (!res.path) {
-      fail(label + ': ' + key + ': auto-path tidak menemukan rute ke ' + conn.to);
-      built[key] = { to: conn.to, path: [] };
+    if (bad) {
+      preBuilt[key] = { to: conn.to, path: [] };
       continue;
     }
-    if (res.overBudget) {
-      fail(
-        label + ': ' + key + ': rute terpendek ' + res.path.length +
-          ' rail melebihi sisa anggaran (limit total ' + opts.railLimit + ')',
-      );
-    }
-    built[key] = { to: conn.to, path: res.path };
-    builtRails += res.path.length;
+    validKeys.push(key);
   }
+
+  interface BuildAttempt {
+    built: Conns;
+    rails: number;
+    failures: string[];
+  }
+
+  const tryBuild = (orderKeys: string[]): BuildAttempt => {
+    const built: Conns = { ...preBuilt };
+    const failures: string[] = [];
+    let rails = 0;
+    const reservedExits = new Set<string>();
+    for (const k of orderKeys) {
+      if (!isSplitKey(k)) continue;
+      const e = splitExitCell(k.split(':')[0], parseInt(k.split(':')[1], 10) as PortIdx);
+      if (e) reservedExits.add(e);
+    }
+    for (const key of orderKeys) {
+      const conn = conns[key];
+      const srcId = key.split(':')[0];
+      const blocked = new Set<string>(machineCells);
+      obstacles.forEach((c) => blocked.add(c));
+      for (const c2 of Object.values(built)) c2.path.forEach((c) => blocked.add(c));
+      reservedExits.forEach((c) => blocked.add(c));
+      const srcCells = footprintCells(srcId, placements);
+      const dstCells = footprintCells(conn.to!, placements);
+      // Sambungan dari SPLIT dibangun persis seperti UI sejak v6.6: belt
+      // wajib keluar lewat sel port-nya sendiri (port dibaca dari sisinya).
+      const srcDef = placements[srcId];
+      let ownExit: string | null = null;
+      if (srcDef && srcDef.type === 'split') {
+        ownExit = splitExitCell(srcId, parseInt(key.split(':')[1], 10) as PortIdx);
+        if (ownExit) blocked.delete(ownExit);
+      }
+      const res =
+        srcDef && srcDef.type === 'split'
+          ? findSplitExitPath({
+              anchor: srcId,
+              port: parseInt(key.split(':')[1], 10) as PortIdx,
+              goalCells: beltGoalCells(dstCells, blocked),
+              directCells: dstCells,
+              blocked,
+              budget: opts.railLimit - rails,
+            })
+          : findBeltPath({
+              srcCells,
+              goalCells: beltGoalCells(dstCells, blocked),
+              directCells: dstCells,
+              blocked,
+              budget: opts.railLimit - rails,
+            });
+      if (ownExit) reservedExits.delete(ownExit);
+      if (!res.path) {
+        failures.push(key + ': auto-path tidak menemukan rute ke ' + conn.to);
+        built[key] = { to: conn.to, path: [] };
+        continue;
+      }
+      if (res.overBudget) {
+        failures.push(
+          key + ': rute terpendek ' + res.path.length +
+            ' rail melebihi sisa anggaran (limit total ' + opts.railLimit + ')',
+        );
+      }
+      built[key] = { to: conn.to, path: res.path };
+      rails += res.path.length;
+    }
+    return { built, rails, failures };
+  };
+
+  // PRNG deterministik (mulberry32): urutan acak yang sama di setiap run.
+  const mulberry32 = (seed: number) => () => {
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const shuffled = (keys: string[], seed: number): string[] => {
+    const rnd = mulberry32(seed);
+    const arr = [...keys];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(rnd() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  };
+
+  const candidateOrders: string[][] = [
+    validKeys,
+    [...validKeys.filter(isSplitKey), ...validKeys.filter((k) => !isSplitKey(k))],
+    [...validKeys.filter((k) => !isSplitKey(k)), ...validKeys.filter(isSplitKey)],
+  ];
+  for (let s = 1; s <= 300; s++) candidateOrders.push(shuffled(validKeys, s * 7919 + validKeys.length));
+
+  let best: BuildAttempt | null = null;
+  for (const order of candidateOrders) {
+    const attempt = tryBuild(order);
+    if (attempt.failures.length === 0) {
+      best = attempt;
+      break;
+    }
+    if (
+      !best ||
+      attempt.failures.length < best.failures.length ||
+      (attempt.failures.length === best.failures.length && attempt.rails < best.rails)
+    ) {
+      best = attempt;
+    }
+  }
+  const built: Conns = best!.built;
+  for (const f of best!.failures) fail(label + ': ' + f);
 
   // Legalitas atas jalur hasil auto-path.
   const pathCells = new Map<string, string>();
@@ -140,6 +250,13 @@ function checkGrid(opts: GridOpts): { rails: number; built: Conns } {
       if (!cellsAdjAny(srcCells, [conn.path[0]])) {
         fail(label + ': ' + key + ': sel pertama tidak bersebelahan dengan sumber');
       }
+      const srcDef2 = placements[srcId];
+      if (srcDef2 && srcDef2.type === 'split') {
+        const want = splitExitCell(srcId, parseInt(key.split(':')[1], 10) as PortIdx);
+        if (conn.path[0] !== want) {
+          fail(label + ': ' + key + ': sel pertama ' + conn.path[0] + ' bukan sel keluar port-nya (' + want + ')');
+        }
+      }
       if (!cellsAdjAny(dstCells, [conn.path[conn.path.length - 1]])) {
         fail(label + ': ' + key + ': sel terakhir tidak bersebelahan dengan tujuan');
       }
@@ -156,16 +273,27 @@ function checkGrid(opts: GridOpts): { rails: number; built: Conns } {
   return { rails, built };
 }
 
-function multiset(defs: NodeDef[]): Map<string, number> {
+function multiset(defs: NodeDef[], keyFn: (d: NodeDef) => string = nodeKey): Map<string, number> {
   const m = new Map<string, number>();
-  for (const d of defs) m.set(nodeKey(d), (m.get(nodeKey(d)) ?? 0) + 1);
+  for (const d of defs) m.set(keyFn(d), (m.get(keyFn(d)) ?? 0) + 1);
   return m;
 }
 
+/**
+ * Kunci perbandingan rak sejak v6.6: SPLIT di rak bersifat generik (tanpa
+ * preset warna) dan menjadi SPLIT berwarna apa pun sesudah pemain mengatur
+ * route-nya, jadi SPLIT dibandingkan menurut tipenya saja. Def di luar rak
+ * (mesin terkunci, penempatan solusi) tetap dibandingkan persis lewat
+ * pemeriksaan jangkarnya masing-masing.
+ */
+function trayKey(d: NodeDef): string {
+  return d.type === 'split' ? 'split|' : nodeKey(d);
+}
+
 function checkTrayCovers(label: string, tray: NodeDef[], placements: Record<string, NodeDef>) {
-  const left = multiset(tray);
+  const left = multiset(tray, trayKey);
   for (const def of Object.values(placements)) {
-    const k = nodeKey(def);
+    const k = trayKey(def);
     const n = left.get(k) ?? 0;
     if (n <= 0) fail(label + ': solusi memakai node di luar rak: ' + k);
     left.set(k, n - 1);
@@ -458,10 +586,14 @@ async function main() {
   }
   const unpairedLevel = fakeLevel({ stream: ['R', 'R', 'B'], target: { OUT: ['G'] } });
   const unpairedRes = await runSim(unpairedLevel, mergeLayout.placements, mergeLayout.connections);
-  if (unpairedRes.verdict.kind === 'leftover' && unpairedRes.verdict.nodeId === '6,3') {
-    console.log('  OK — token tak berpasangan menunggu di MERGE (verdict = leftover).');
+  if (
+    unpairedRes.verdict.kind === 'win' &&
+    unpairedRes.verdict.leak?.kind === 'leftover' &&
+    unpairedRes.verdict.leak.nodeId === '6,3'
+  ) {
+    console.log('  OK — token tak berpasangan menunggu di MERGE: output tetap lolos, kebocoran tercatat (win + leak leftover).');
   } else {
-    fail('uji tak berpasangan MERGE: verdict = ' + unpairedRes.verdict.kind + ' (diharapkan leftover di MERGE)');
+    fail('uji tak berpasangan MERGE: verdict = ' + unpairedRes.verdict.kind + ' (diharapkan win dengan leak leftover di MERGE)');
   }
 
   // ---- 2b) Fokus SPLIT 3-port + trail terbuka (uji engine sintetis) ----
@@ -544,9 +676,11 @@ async function main() {
         fail(label + ': mesin terkunci di ' + anchor + ' tidak cocok dengan solusi Expert');
       }
     }
-    // Inventaris Expert (rak + terkunci) harus persis multiset solusi.
-    const inv = multiset([...exp.tray, ...Object.values(exp.locked)]);
-    const need = multiset(Object.values(exp.solution.placements));
+    // Inventaris Expert (rak + terkunci) harus persis multiset solusi
+    // (SPLIT dibandingkan menurut tipe saja — rak generik sejak v6.6;
+    // kecocokan persis mesin terkunci sudah diperiksa per jangkar di atas).
+    const inv = multiset([...exp.tray, ...Object.values(exp.locked)], trayKey);
+    const need = multiset(Object.values(exp.solution.placements), trayKey);
     for (const k of new Set([...inv.keys(), ...need.keys()])) {
       if ((inv.get(k) ?? 0) !== (need.get(k) ?? 0)) {
         fail(label + ': inventaris Expert tidak persis solusi untuk ' + k +

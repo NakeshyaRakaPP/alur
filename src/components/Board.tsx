@@ -22,6 +22,7 @@ import {
   dragOpenEnd,
   edgeRefCell,
   findMachineExitPath,
+  findSplitExitPath,
   findTrailExtension,
   footprintCells,
   footprintCellsAt,
@@ -48,7 +49,7 @@ import type { DragCtx, DragHover, Point } from '../geometry';
 import { BELT_IMG, COLOR_HEX, INPUT_IMG, NODE_IMG, OUTPUT_IMG, nodeLabel, splitRoutingOf } from '../nodeMeta';
 import { ensureMasks, masksReady, spriteOpaque } from '../sprites';
 import type { SpriteKind } from '../sprites';
-import type { ColorCode, Conns, Level, NodeDef, PlacedNode } from '../types';
+import type { ColorCode, Conns, Level, NodeDef, PlacedNode, PortIdx } from '../types';
 
 export interface BoardProps {
   level: Level;
@@ -431,24 +432,45 @@ export default function Board(props: BoardProps) {
       }
     } else if (hoverMachine && hoverMachine !== d.srcId && hoverMachine !== 'IN') {
       const dstCells = footprintCells(hoverMachine, p.placed);
-      const res = findMachineExitPath({
-        srcCells: d.ctx.srcCells,
-        heldTile: d.srcTile,
-        goalCells: beltGoalCells(dstCells, d.blocked),
-        directCells: dstCells,
-        blocked: d.blocked,
-        budget,
-      });
+      // A SPLIT belt leaves by its port's own side, always: the first cell
+      // is the port's exit cell, so the port is readable from the belt.
+      const res =
+        srcNode && srcNode.type === 'split'
+          ? findSplitExitPath({
+              anchor: d.ctx.srcCells[0],
+              port: d.idx as PortIdx,
+              goalCells: beltGoalCells(dstCells, d.blocked),
+              directCells: dstCells,
+              blocked: d.blocked,
+              budget,
+            })
+          : findMachineExitPath({
+              srcCells: d.ctx.srcCells,
+              heldTile: d.srcTile,
+              goalCells: beltGoalCells(dstCells, d.blocked),
+              directCells: dstCells,
+              blocked: d.blocked,
+              budget,
+            });
       path = res.path ?? [];
       over = res.overBudget;
     } else if (!hoverMachine && key && !d.blocked.has(key)) {
-      const res = findMachineExitPath({
-        srcCells: d.ctx.srcCells,
-        heldTile: d.srcTile,
-        goalCells: [key],
-        blocked: d.blocked,
-        budget,
-      });
+      const res =
+        srcNode && srcNode.type === 'split'
+          ? findSplitExitPath({
+              anchor: d.ctx.srcCells[0],
+              port: d.idx as PortIdx,
+              goalCells: [key],
+              blocked: d.blocked,
+              budget,
+            })
+          : findMachineExitPath({
+              srcCells: d.ctx.srcCells,
+              heldTile: d.srcTile,
+              goalCells: [key],
+              blocked: d.blocked,
+              budget,
+            });
       path = res.path ?? [];
       over = res.overBudget;
     }
@@ -872,6 +894,21 @@ export default function Board(props: BoardProps) {
       const moved = Math.hypot(e.clientX - info.x, e.clientY - info.y);
       if (moved > 6 || performance.now() - info.t > 700) return;
       const p = propsRef.current;
+      // With a machine in hand, a click PLACES — even on a belt cell: the
+      // machine splices into the line (the belt splits around it, upstream
+      // ends at the machine, its port 0 continues downstream, so all three
+      // machines stay connected). Click-to-delete a belt only applies with
+      // an empty hand, below.
+      if (p.ghost && info.cell) {
+        if (cellPlaceable(info.cell, p.ghost.type, p.placed, p.conns, new Set(p.obstacles ?? []))) {
+          p.onPlace(info.cell, null);
+        } else {
+          const spliced = spliceConns(p.conns, info.cell, p.ghost.type, p.placed, new Set(p.obstacles ?? []));
+          if (spliced) p.onPlace(info.cell, spliced);
+          else flashCell(info.cell);
+        }
+        return;
+      }
       if (info.conn) {
         const next = { ...p.conns };
         delete next[info.conn];
@@ -882,18 +919,8 @@ export default function Board(props: BoardProps) {
       // lives in the hold menu, never on a stray click.
       if (info.mach) return;
       if (info.cell) {
-        if (!p.ghost) {
-          p.onPlaceRejected(info.cell);
-          flashCell(info.cell);
-        } else if (cellPlaceable(info.cell, p.ghost.type, p.placed, p.conns, new Set(p.obstacles ?? []))) {
-          p.onPlace(info.cell, null);
-        } else {
-          // Dropping the machine onto a running belt splices it into the
-          // line: the belt splits around it and the flow never breaks.
-          const spliced = spliceConns(p.conns, info.cell, p.ghost.type, p.placed, new Set(p.obstacles ?? []));
-          if (spliced) p.onPlace(info.cell, spliced);
-          else flashCell(info.cell);
-        }
+        p.onPlaceRejected(info.cell);
+        flashCell(info.cell);
       }
     }
     function onCancel() {
@@ -1374,7 +1401,7 @@ function SplitRouteChip({
   return (
     <g
       className="route-chip"
-      transform={`translate(${a.x - 66} ${a.y - 97})`}
+      transform={`translate(${a.x - 28} ${a.y - 97})`}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => {
         e.stopPropagation();

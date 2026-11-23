@@ -948,6 +948,16 @@ button.ghost:hover {
 }
 .route-chip {
   cursor: pointer;
+  animation: route-chip-pulse 2.6s ease-in-out infinite;
+}
+@keyframes route-chip-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
 }
 .route-chip rect {
   fill: #2b2f36;
@@ -987,7 +997,7 @@ button.ghost:hover {
   border: 2px solid var(--line);
   box-shadow: var(--shadow);
   padding: 12px 14px 10px;
-  min-width: 308px;
+  min-width: 344px;
   max-width: 94%;
 }
 .route-panel-head {
@@ -1062,6 +1072,16 @@ button.ghost:hover {
   font-size: 11.5px;
   font-weight: 700;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.route-port {
+  min-width: 64px;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  color: var(--ink);
 }
 .route-seg button.active {
   background: var(--accent);
