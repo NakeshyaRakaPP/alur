@@ -111,7 +111,22 @@ header img.logo {
   padding: 5px 12px;
 }
 .chapter-block {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   margin-top: 22px;
+  padding: 10px 12px 14px;
+}
+/* The chapter world's painting behind its level cards. */
+.chapter-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.3;
+  pointer-events: none;
+  z-index: -1;
 }
 .chapter-block h2 {
   font-size: 16px;
@@ -184,11 +199,59 @@ header img.logo {
    board, controls and results are sections of this card, separated by
    hairlines instead of stacked boxes. */
 .game-card {
+  position: relative;
+  isolation: isolate;
   background: #1b1e24;
   border: 3px solid var(--line);
   box-shadow: var(--shadow);
   margin-top: 14px;
   padding: 14px 16px 16px;
+}
+/* The chapter world's painting, faint behind the game card. */
+.game-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.2;
+  pointer-events: none;
+  z-index: -1;
+}
+/* Win-screen line naming the real-systems concept the level trained. */
+.concept-line {
+  display: block;
+  margin-top: 9px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.concept-tag {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  color: #1d1305;
+  background: var(--accent);
+  padding: 2px 6px;
+  margin-right: 7px;
+  vertical-align: 1px;
+}
+/* Ambient dust over the card (screen space; never intercepts input). */
+.dust-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 3;
+}
+/* Static vignette: the card's edges fall off into shadow. */
+.vignette-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background: radial-gradient(ellipse at 50% 42%, transparent 56%, rgba(0, 0, 0, 0.38) 100%);
 }
 .topbar {
   display: flex;
@@ -726,16 +789,61 @@ button.ghost:hover {
 .belt-conn.live image {
   filter: drop-shadow(0 0 6px rgba(255, 140, 26, 0.9)) drop-shadow(0 0 14px rgba(255, 140, 26, 0.5));
 }
+/* Flow dashes ride the belt's spine while a token travels it; the dash
+   offset is driven from the token's own travelled distance. */
+.flow-line {
+  fill: none;
+  stroke: #ffa02e;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 6 24;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.belt-conn.live .flow-line {
+  opacity: 0.55;
+}
+/* Working machines: a breathing glow at the base + a blinking beacon. */
+.machine-glow {
+  pointer-events: none;
+  animation: machineGlowPulse 1.1s ease-in-out infinite;
+}
+@keyframes machineGlowPulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+.machine-lamp {
+  pointer-events: none;
+  animation: machineLampBlink 0.9s steps(1) infinite;
+}
+@keyframes machineLampBlink {
+  0%,
+  55% {
+    opacity: 1;
+  }
+  56%,
+  100% {
+    opacity: 0.2;
+  }
+}
+/* BUFFER pack gauge under the machine label. */
+.buf-bar-bg {
+  fill: #14161a;
+  stroke: #3a4048;
+  stroke-width: 1;
+}
+.buf-bar-fill {
+  fill: #ffa02e;
+}
 /* Belt tiles are warped by the camera transform; keep them crunchy. */
 #board image {
   image-rendering: pixelated;
-}
-.trash-label {
-  fill: #767d87;
-  font-size: 11px;
-  text-anchor: middle;
-  letter-spacing: 0.6px;
-  font-family: var(--font);
 }
 #board {
   touch-action: none;
@@ -1117,11 +1225,42 @@ button.ghost:hover {
 
 /* ---------- Main menu (title screen) ---------- */
 .menu-screen {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
   padding: 52px 16px 34px;
+}
+/* Painted factory platform behind the title screen. */
+.menu-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 62%;
+  opacity: 0.42;
+  pointer-events: none;
+  z-index: -1;
+}
+/* Level select sits over the dark deck painting. */
+.home-screen {
+  position: relative;
+  isolation: isolate;
+}
+.home-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  opacity: 0.3;
+  pointer-events: none;
+  z-index: -1;
 }
 .menu-logo {
   height: 168px;
@@ -1252,6 +1391,378 @@ button.ghost.menu-small.danger {
   text-align: center;
   font-size: 24px;
   color: var(--accent-hi);
+}
+.howto-sub {
+  margin-top: 14px;
+  color: var(--accent-hi);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+}
+
+/* ---------- Systems Notes (the reference sheet) ---------- */
+.note-row {
+  border-top: 1px solid var(--line);
+  padding: 10px 0 4px;
+}
+.note-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.note-head b {
+  color: var(--ink);
+  font-size: 13.5px;
+  letter-spacing: 0.4px;
+}
+.note-levels {
+  color: var(--ink-soft);
+  font-size: 10.5px;
+  letter-spacing: 0.4px;
+  text-align: right;
+  flex: none;
+}
+.note-row p {
+  margin: 4px 0 6px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.note-real {
+  color: var(--ink) !important;
+}
+.note-real-tag {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+  color: #1d1305;
+  background: var(--accent);
+  padding: 2px 5px;
+  margin-right: 7px;
+  vertical-align: 1px;
+}
+
+/* ---------- Machine notes (on demand, above the rack) ---------- */
+.note-toggle {
+  margin-left: auto;
+  align-self: flex-start;
+  flex: none;
+  font-size: 12px;
+  padding: 5px 10px;
+}
+.machine-note {
+  border: 2px solid var(--line);
+  border-left: 5px solid var(--accent);
+  background: var(--card);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.machine-note-head {
+  color: var(--accent-hi);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+}
+.machine-note-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+.machine-note-row img {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  background: #31363f;
+  border: 2px solid var(--line);
+  flex: none;
+}
+.machine-note {
+  max-height: 64vh;
+  overflow-y: auto;
+}
+.machine-note-row.demo {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.machine-note-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.machine-note-title img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  background: #31363f;
+  border: 2px solid var(--line);
+  flex: none;
+}
+.howto-demo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
+/* ---------- Machine demos: looping cartoons in the guide book ---------- */
+.machine-demo {
+  width: 100%;
+  height: auto;
+  display: block;
+  background: #262b35;
+  border: 2px solid var(--line);
+}
+.md-tok {
+  opacity: 0;
+  animation-duration: 3.6s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+.md-filter-pass { animation-name: md-filter-pass; }
+.md-filter-trash { animation-name: md-filter-trash; }
+.md-transform-in { animation-name: md-transform-in; }
+.md-transform-out { animation-name: md-transform-out; }
+.md-split-r { animation-name: md-split-r; }
+.md-split-g { animation-name: md-split-g; animation-delay: -1.2s; }
+.md-split-b { animation-name: md-split-b; animation-delay: -2.4s; }
+.md-tahan-1 { animation-name: md-tahan-1; animation-duration: 4.8s; }
+.md-tahan-2 { animation-name: md-tahan-2; animation-duration: 4.8s; }
+.md-tahan-3 { animation-name: md-tahan-3; animation-duration: 4.8s; }
+.md-sort-b1 { animation-name: md-sort-b1; animation-duration: 4.8s; }
+.md-sort-r { animation-name: md-sort-r; animation-duration: 4.8s; }
+.md-sort-b2 { animation-name: md-sort-b2; animation-duration: 4.8s; }
+.md-merge-r { animation-name: md-merge-r; }
+.md-merge-b { animation-name: md-merge-b; }
+.md-merge-out { animation-name: md-merge-out; }
+
+@keyframes md-filter-pass {
+  0% { transform: translate(-24px, 42px); opacity: 0; }
+  6% { opacity: 1; }
+  94% { opacity: 1; }
+  100% { transform: translate(200px, 42px); opacity: 0; }
+}
+@keyframes md-filter-trash {
+  0% { transform: translate(-24px, 42px); opacity: 0; }
+  6% { opacity: 1; }
+  42% { transform: translate(78px, 42px); opacity: 1; }
+  54% { transform: translate(78px, 54px); opacity: 1; }
+  64% { transform: translate(78px, 62px); opacity: 0; }
+  100% { transform: translate(78px, 62px); opacity: 0; }
+}
+@keyframes md-transform-in {
+  0% { transform: translate(-24px, 42px); opacity: 0; }
+  6% { opacity: 1; }
+  44% { transform: translate(78px, 42px); opacity: 1; }
+  52% { transform: translate(78px, 42px); opacity: 0; }
+  100% { transform: translate(78px, 42px); opacity: 0; }
+}
+@keyframes md-transform-out {
+  0% { transform: translate(78px, 42px); opacity: 0; }
+  52% { transform: translate(78px, 42px); opacity: 0; }
+  60% { transform: translate(78px, 42px); opacity: 1; }
+  94% { opacity: 1; }
+  100% { transform: translate(200px, 42px); opacity: 0; }
+}
+@keyframes md-split-r {
+  0% { transform: translate(-24px, 42px); opacity: 0; }
+  5% { opacity: 1; }
+  34% { transform: translate(78px, 42px); }
+  92% { transform: translate(186px, 2px); opacity: 1; }
+  100% { transform: translate(196px, -2px); opacity: 0; }
+}
+@keyframes md-split-g {
+  0% { transform: translate(-24px, 42px); opacity: 0; }
+  5% { opacity: 1; }
+  34% { transform: translate(78px, 42px); }
+  92% { opacity: 1; }
+  100% { transform: translate(200px, 42px); opacity: 0; }
+}
+@keyframes md-split-b {
+  0% { transform: translate(-24px, 42px); opacity: 0; }
+  5% { opacity: 1; }
+  34% { transform: translate(78px, 42px); }
+  92% { transform: translate(186px, 64px); opacity: 1; }
+  100% { transform: translate(196px, 68px); opacity: 0; }
+}
+@keyframes md-tahan-1 {
+  0% { transform: translate(-24px, 42px); opacity: 0; }
+  5% { opacity: 1; }
+  26% { transform: translate(58px, 42px); }
+  60% { transform: translate(58px, 42px); opacity: 1; }
+  88% { transform: translate(196px, 42px); opacity: 1; }
+  96% { transform: translate(206px, 42px); opacity: 0; }
+  100% { transform: translate(206px, 42px); opacity: 0; }
+}
+@keyframes md-tahan-2 {
+  0% { transform: translate(-24px, 42px); opacity: 0; }
+  10% { transform: translate(-24px, 42px); opacity: 0; }
+  15% { opacity: 1; }
+  34% { transform: translate(78px, 42px); }
+  60% { transform: translate(78px, 42px); opacity: 1; }
+  88% { transform: translate(196px, 42px); opacity: 1; }
+  96% { transform: translate(206px, 42px); opacity: 0; }
+  100% { transform: translate(206px, 42px); opacity: 0; }
+}
+@keyframes md-tahan-3 {
+  0% { transform: translate(-24px, 42px); opacity: 0; }
+  18% { transform: translate(-24px, 42px); opacity: 0; }
+  23% { opacity: 1; }
+  42% { transform: translate(98px, 42px); }
+  60% { transform: translate(98px, 42px); opacity: 1; }
+  88% { transform: translate(196px, 42px); opacity: 1; }
+  96% { transform: translate(206px, 42px); opacity: 0; }
+  100% { transform: translate(206px, 42px); opacity: 0; }
+}
+@keyframes md-sort-b1 {
+  0% { transform: translate(-24px, 42px); opacity: 0; }
+  5% { opacity: 1; }
+  24% { transform: translate(58px, 42px); }
+  50% { transform: translate(58px, 42px); opacity: 1; }
+  72% { transform: translate(196px, 42px); opacity: 1; }
+  80% { transform: translate(206px, 42px); opacity: 0; }
+  100% { transform: translate(206px, 42px); opacity: 0; }
+}
+@keyframes md-sort-b2 {
+  0% { transform: translate(-24px, 42px); opacity: 0; }
+  14% { transform: translate(-24px, 42px); opacity: 0; }
+  19% { opacity: 1; }
+  38% { transform: translate(98px, 42px); }
+  50% { transform: translate(98px, 42px); opacity: 1; }
+  72% { transform: translate(196px, 42px); opacity: 1; }
+  80% { transform: translate(206px, 42px); opacity: 0; }
+  100% { transform: translate(206px, 42px); opacity: 0; }
+}
+@keyframes md-sort-r {
+  0% { transform: translate(-24px, 42px); opacity: 0; }
+  8% { transform: translate(-24px, 42px); opacity: 0; }
+  13% { opacity: 1; }
+  31% { transform: translate(78px, 42px); }
+  70% { transform: translate(78px, 42px); opacity: 1; }
+  92% { transform: translate(196px, 42px); opacity: 1; }
+  100% { transform: translate(206px, 42px); opacity: 0; }
+}
+@keyframes md-merge-r {
+  0% { transform: translate(-24px, 2px); opacity: 0; }
+  6% { opacity: 1; }
+  46% { transform: translate(78px, 42px); opacity: 1; }
+  54% { transform: translate(78px, 42px); opacity: 0; }
+  100% { transform: translate(78px, 42px); opacity: 0; }
+}
+@keyframes md-merge-b {
+  0% { transform: translate(-24px, 66px); opacity: 0; }
+  6% { opacity: 1; }
+  46% { transform: translate(78px, 42px); opacity: 1; }
+  54% { transform: translate(78px, 42px); opacity: 0; }
+  100% { transform: translate(78px, 42px); opacity: 0; }
+}
+@keyframes md-merge-out {
+  0% { transform: translate(78px, 42px); opacity: 0; }
+  54% { transform: translate(78px, 42px); opacity: 0; }
+  62% { transform: translate(78px, 42px); opacity: 1; }
+  94% { opacity: 1; }
+  100% { transform: translate(200px, 42px); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .md-tok { animation: none; }
+}
+
+/* ---------- Visual tutorial: the coach hand (Level 1) ---------- */
+.coach-ring {
+  animation: coach-pulse-html 1.15s ease-out infinite;
+}
+@keyframes coach-pulse-html {
+  0% { box-shadow: 0 0 0 0 rgba(255, 160, 46, 0.8); }
+  100% { box-shadow: 0 0 0 13px rgba(255, 160, 46, 0); }
+}
+.coach-skip {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.coach-skip:hover {
+  color: var(--ink);
+}
+.coach-mark {
+  pointer-events: none;
+}
+.coach-ring-svg {
+  fill: none;
+  stroke: #ffa02e;
+  stroke-width: 3.5;
+  opacity: 0.9;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: coach-ring-pulse 1.15s ease-out infinite;
+}
+@keyframes coach-ring-pulse {
+  0% { transform: scale(0.72); opacity: 0; }
+  35% { opacity: 0.95; }
+  100% { transform: scale(1.14); opacity: 0; }
+}
+.coach-dash {
+  fill: none;
+  stroke: #ffa02e;
+  stroke-width: 3.5;
+  stroke-dasharray: 9 8;
+  opacity: 0.8;
+  animation: coach-dash-move 0.7s linear infinite;
+}
+@keyframes coach-dash-move {
+  to { stroke-dashoffset: -17; }
+}
+.coach-hand-poly {
+  fill: #fff;
+  stroke: #1d1305;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+.coach-tip {
+  fill: #ffa02e;
+  opacity: 0.55;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: coach-tip-pulse 1.15s ease-out infinite;
+}
+@keyframes coach-tip-pulse {
+  0% { transform: scale(0.4); opacity: 0.85; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .coach-ring, .coach-ring-svg, .coach-dash, .coach-tip { animation: none; }
+}
+.machine-note-btn {
+  align-self: flex-end;
+  background: var(--accent);
+  color: #1d1305;
+  border: none;
+  padding: 5px 16px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.machine-note-btn:hover {
+  background: var(--accent-hi);
 }
 .about-body p {
   color: var(--ink-soft);

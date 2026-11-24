@@ -4,11 +4,14 @@ export const chapter5: Level[] = [
   {
     id: 'c5-1',
     chapter: 5,
-    name: 'Level 19 — Two Factories',
+    name: 'Two Terminals',
+    nameId: 'Dua Terminal',
     brief:
-      '<b>Output A:</b> packs of 2 blue, made from red. <b>Output B:</b> green. Real blue is trash.',
+      'Two terminals, side by side. Nothing crosses over. <b>Output A:</b> packs of 2 blue, made from red. <b>Output B:</b> green. Real blue is trash.',
     briefId:
-      '<b>Output A:</b> paket biru isi 2, dari merah. <b>Output B:</b> hijau. Biru asli dibuang.',
+      'Dua terminal, berdampingan. Tidak ada yang menyeberang. <b>Output A:</b> paket biru isi 2, dari merah. <b>Output B:</b> hijau. Biru asli dibuang.',
+    concept: 'Parallel systems — two lines can run side by side without mixing.',
+    conceptId: 'Sistem paralel — dua jalur bisa berjalan berdampingan tanpa bercampur.',
     stream: ['R', 'G', 'B', 'R', 'G', 'B', 'R', 'G', 'B', 'R', 'G', 'B'],
     outputs: ['A', 'B'],
     target: { A: ['B', 'B', 'B', 'B'], B: ['G', 'G', 'G', 'G'] },
@@ -63,11 +66,14 @@ export const chapter5: Level[] = [
   {
     id: 'c5-2',
     chapter: 5,
-    name: 'Level 20 — Change of Plans',
+    name: 'Flight Rescheduled',
+    nameId: 'Penerbangan Dijadwal Ulang',
     brief:
-      'Pair <b>red + blue</b> → green. Green must become <b>red</b> first.',
+      'Plans changed at the airport. Pair <b>red + blue</b> → green. Green must become <b>red</b> first.',
     briefId:
-      'Pasangkan <b>merah + biru</b> → hijau. Hijau harus jadi <b>merah</b> dulu.',
+      'Rencana berubah di bandara. Pasangkan <b>merah + biru</b> → hijau. Hijau harus jadi <b>merah</b> dulu.',
+    concept: 'Adaptation — when plans change, a good system reroutes.',
+    conceptId: 'Adaptasi — saat rencana berubah, sistem yang baik mengubah rutenya.',
     stream: ['G', 'B', 'G', 'B', 'G', 'B'],
     outputs: ['OUT'],
     target: { OUT: ['G', 'G', 'G'] },
@@ -112,11 +118,14 @@ export const chapter5: Level[] = [
   {
     id: 'c5-3',
     chapter: 5,
-    name: 'Level 21 — Packed & Plain',
+    name: 'Checked & Carry-On',
+    nameId: 'Bagasi & Kabin',
     brief:
-      '<b>Output A:</b> one pack of 3 green. <b>Output B:</b> blue — real blue and red-turned-blue.',
+      'Some bags are bundled, some travel plain. <b>Output A:</b> one pack of 3 green. <b>Output B:</b> blue — real blue and red-turned-blue.',
     briefId:
-      '<b>Output A:</b> satu paket hijau isi 3. <b>Output B:</b> biru — biru asli dan merah yang dijadikan biru.',
+      'Sebagian bagasi dibundel, sebagian jalan satuan. <b>Output A:</b> satu paket hijau isi 3. <b>Output B:</b> biru — biru asli dan merah yang dijadikan biru.',
+    concept: 'Mixed rules — one system can hold several contracts at once.',
+    conceptId: 'Aturan campuran — satu sistem bisa memegang beberapa aturan sekaligus.',
     stream: ['B', 'R', 'G', 'B', 'R', 'G', 'B', 'R', 'G'],
     outputs: ['A', 'B'],
     target: { A: ['G', 'G', 'G'], B: ['B', 'B', 'B', 'B', 'B', 'B'] },
@@ -171,11 +180,14 @@ export const chapter5: Level[] = [
   {
     id: 'c5-4',
     chapter: 5,
-    name: 'Level 22 — Full Cascade',
+    name: 'Rush Hour',
+    nameId: 'Jam Sibuk',
     brief:
-      '<b>Output A:</b> packs of 2 green, made from red. <b>Output B:</b> blue. <b>Output:</b> real green.',
+      'Rush hour at the hub. <b>Output A:</b> packs of 2 green, made from red. <b>Output B:</b> blue. <b>Output:</b> real green.',
     briefId:
-      '<b>Output A:</b> paket hijau isi 2, dari merah. <b>Output B:</b> biru. <b>Output:</b> hijau asli.',
+      'Jam sibuk di hub. <b>Output A:</b> paket hijau isi 2, dari merah. <b>Output B:</b> biru. <b>Output:</b> hijau asli.',
+    concept: 'Cascade — long chains where every step depends on the one before.',
+    conceptId: 'Rangkaian — rantai panjang di mana setiap langkah bergantung pada langkah sebelumnya.',
     stream: ['R', 'B', 'G', 'G', 'R', 'B', 'B', 'G', 'R', 'G', 'B', 'R'],
     outputs: ['OUT', 'A', 'B'],
     target: { A: ['G', 'G', 'G', 'G'], B: ['B', 'B', 'B', 'B'], OUT: ['G', 'G', 'G', 'G'] },
@@ -229,11 +241,14 @@ export const chapter5: Level[] = [
   {
     id: 'c5-5',
     chapter: 5,
-    name: 'Level 23 — Odd Pairs',
+    name: 'Odd Pairs',
+    nameId: 'Pasangan Ganjil',
     brief:
-      'Pairs of <b>red + blue</b> → green, packed by 2. Green is trash.',
+      'Not everything pairs up neatly. Pairs of <b>red + blue</b> → green, packed by 2. Green is trash.',
     briefId:
-      'Pasangan <b>merah + biru</b> → hijau, dipaket isi 2. Hijau dibuang.',
+      'Tidak semua berpasangan dengan rapi. Pasangan <b>merah + biru</b> → hijau, dipaket isi 2. Hijau dibuang.',
+    concept: 'Edge cases — real systems always meet leftovers.',
+    conceptId: 'Kasus tepi — sistem nyata selalu bertemu sisa-sisa.',
     stream: ['R', 'R', 'B', 'G', 'R', 'B', 'G', 'B', 'R', 'B'],
     outputs: ['OUT'],
     target: { OUT: ['G', 'G', 'G', 'G'] },
@@ -289,11 +304,14 @@ export const chapter5: Level[] = [
   {
     id: 'c5-6',
     chapter: 5,
-    name: 'Level 24 — The Whole Plant',
+    name: 'The Whole Airport',
+    nameId: 'Seluruh Bandara',
     brief:
-      '<b>Output A:</b> packs of 3 green. <b>Output B:</b> one pack of 3 blue, made from red + blue pairs.',
+      'Every system you know, in one airport. <b>Output A:</b> packs of 3 green. <b>Output B:</b> one pack of 3 blue, made from red + blue pairs.',
     briefId:
-      '<b>Output A:</b> paket hijau isi 3. <b>Output B:</b> satu paket biru isi 3, dari pasangan merah + biru.',
+      'Semua sistem yang kamu kenal, dalam satu bandara. <b>Output A:</b> paket hijau isi 3. <b>Output B:</b> satu paket biru isi 3, dari pasangan merah + biru.',
+    concept: 'The whole system — you just modeled a whole working airport.',
+    conceptId: 'Sistem utuh — kamu baru saja memodelkan satu bandara yang bekerja utuh.',
     stream: ['G', 'R', 'G', 'B', 'G', 'R', 'G', 'B', 'G', 'R', 'G', 'B'],
     outputs: ['A', 'B'],
     target: { A: ['G', 'G', 'G', 'G', 'G', 'G'], B: ['B', 'B', 'B'] },

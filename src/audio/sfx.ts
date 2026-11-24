@@ -159,6 +159,13 @@ export const sfx = {
     tone({ freq: 960, freqEnd: 1400, dur: 0.1, gain: 0.05, delay: 0.02 });
   },
 
+  /** A token shredded by FILTER: a short crunch over a low thock. */
+  trash(): void {
+    noiseBurst({ dur: 0.09, gain: 0.15, freq: 1600 });
+    noiseBurst({ dur: 0.07, gain: 0.09, freq: 800, delay: 0.03 });
+    tone({ freq: 170, freqEnd: 90, type: 'triangle', dur: 0.09, gain: 0.16 });
+  },
+
   /** A token arriving at an Output: a glass ding that climbs per arrival. */
   collect(): void {
     const steps = [0, 3, 5, 7, 10, 12];

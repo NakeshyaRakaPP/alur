@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import Board from './Board';
+import DustOverlay from './DustOverlay';
+import MachineDemo from './MachineDemo';
+import { preloadAssemblies } from '../assembly';
 import { computeMetrics, isBetter, simulate, starsFor, starsForExpert } from '../engine';
 import type { Emit, Verdict } from '../engine';
 import { sfx } from '../audio/sfx';
 import { anchorOf, camBasis, connPoints, portPos, railsUsed, screenToGridFloat } from '../geometry';
-import { COLOR_HEX, COLOR_NAME, COLOR_NAME_ID, BELT_IMG, NODE_IMG, TOKEN_IMG, nodeKey, nodeLabel, nodeName, splitRoutingOf, exclusiveSplitRouting } from '../nodeMeta';
-import type { ColorCode, Conns, Level, Metrics, NodeDef, OutputId, PlacedNode, PortIdx, SplitRouting } from '../types';
+import { CHAPTER_BG, COLOR_HEX, COLOR_NAME, COLOR_NAME_ID, BELT_IMG, MACHINE_NOTE, nodeImg, tokenImg, nodeKey, nodeLabel, nodeName, splitRoutingOf, exclusiveSplitRouting } from '../nodeMeta';
+import type { ColorCode, Conns, Level, Metrics, NodeDef, NodeType, OutputId, PlacedNode, PortIdx, SplitRouting } from '../types';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const FIRST_LEVEL_ID = 'c1-1';
-const TRASH_Y = 512;
 const CONFETTI_COLORS = ['#E5534B', '#2E6FDB', '#35A852', '#FF8C1A', '#FFA02E'];
 const COACH_STEPS = [
   '1 · Pick a machine from the rack',
@@ -117,6 +119,17 @@ export default function GameScreen({
   const [running, setRunning] = useState(false);
   const [collected, setCollected] = useState<Partial<Record<string, ColorCode[]>>>({});
   const [bufLabels, setBufLabels] = useState<Record<string, string>>({});
+  const [bufFill, setBufFill] = useState<Record<string, { held: number; cap: number }>>({});
+  const [activeMachines, setActiveMachines] = useState<ReadonlySet<string>>(new Set());
+  // Self-assembly trigger for the board: set on place (fromCell null)
+  // and on move (fromCell = the anchor the machine just left).
+  const [assembly, setAssembly] = useState<{ id: string; fromCell: string | null; nonce: number } | null>(null);
+  useEffect(() => {
+    preloadAssemblies(effLevel.chapter);
+  }, [effLevel.chapter]);
+  const activeTimersRef = useRef<Map<string, number>>(new Map());
+  const tokenNodeRef = useRef<Map<number, string>>(new Map());
+  const arrivalsRef = useRef<Record<string, number>>({});
   const [result, setResult] = useState<ResultState | null>(null);
   const [won, setWon] = useState(false);
   const [showStamp, setShowStamp] = useState(false);
@@ -127,9 +140,25 @@ export default function GameScreen({
   const [flashNodeId, setFlashNodeId] = useState<string | null>(null);
   const [confetti, setConfetti] = useState<Confetto[]>([]);
   const [ranOnce, setRanOnce] = useState(false);
+  const [coachSkipped, setCoachSkipped] = useState(false);
   const [dragRails, setDragRails] = useState<number | null>(null);
   const [routeEditId, setRouteEditId] = useState<string | null>(null);
   const [camAngle, setCamAngle] = useState(0);
+  // Machine types in this rack — their one-line behavior notes live
+  // behind the "Machine notes" button, shown only when the player asks.
+  const noteTypes: NodeType[] = [];
+  for (const d of [
+    ...(expert ? expert.tray : level.tray),
+    ...(expert ? Object.values(expert.locked) : []),
+  ]) {
+    if (!noteTypes.includes(d.type)) noteTypes.push(d.type);
+  }
+  const [noteOpen, setNoteOpen] = useState(false);
+
+  function toggleNote() {
+    setNoteOpen((open) => !open);
+    sfx.click();
+  }
 
   const runIdRef = useRef(0);
   const angleRef = useRef(0);
@@ -229,7 +258,7 @@ export default function GameScreen({
     img.setAttribute('width', '40');
     img.setAttribute('height', '40');
     img.setAttribute('clip-path', 'url(#tokClip)');
-    img.setAttribute('href', TOKEN_IMG[color]);
+    img.setAttribute('href', tokenImg(effLevel.chapter, color));
     g.appendChild(img);
     const vis: TokenVis = { g, img, x, y, lift: 0, s: 1, color };
     applyTransform(vis);
@@ -272,7 +301,7 @@ export default function GameScreen({
     });
   }
 
-  function moveAlong(vis: TokenVis, pts: { x: number; y: number; l: number }[]): Promise<boolean> {
+  function moveAlong(vis: TokenVis, pts: { x: number; y: number; l: number }[], onProgress?: (d: number) => void): Promise<boolean> {
     return new Promise((resolve) => {
       if (pts.length < 2) {
         resolve(true);
@@ -296,6 +325,7 @@ export default function GameScreen({
         }
         const k = Math.min(1, (t - t0) / DUR);
         const d = k * total;
+        if (onProgress) onProgress(d);
         let s = segs[segs.length - 1];
         for (const sg of segs) {
           if (d <= sg.acc + sg.len) {
@@ -339,6 +369,133 @@ export default function GameScreen({
     });
   }
 
+  /** Pixel-crumb burst in the token layer; resolves when the last crumb dies. */
+  function burstFx(x: number, y: number, fill: string, count: number): Promise<void> {
+    return new Promise((resolve) => {
+      const layer = tokenLayerRef.current;
+      if (!layer) {
+        resolve();
+        return;
+      }
+      interface Crumb {
+        n: SVGRectElement;
+        px: number;
+        py: number;
+        vx: number;
+        vy: number;
+        life: number;
+        max: number;
+        size: number;
+      }
+      const crumbs: Crumb[] = [];
+      for (let i = 0; i < count; i++) {
+        const size = 3.5 + Math.random() * 3.5;
+        const n = document.createElementNS(SVG_NS, 'rect') as unknown as SVGRectElement;
+        n.setAttribute('fill', i % 4 === 3 ? '#8A929C' : fill);
+        layer.appendChild(n);
+        crumbs.push({
+          n,
+          px: x,
+          py: y,
+          vx: (Math.random() - 0.35) * 130,
+          vy: -(40 + Math.random() * 110),
+          life: 0,
+          max: 210 + Math.random() * 100,
+          size,
+        });
+      }
+      let last = performance.now();
+      function frame(t: number) {
+        const dt = Math.min(50, t - last);
+        last = t;
+        let alive = false;
+        for (const c of crumbs) {
+          if (!c.n.isConnected) continue;
+          c.life += dt;
+          if (c.life >= c.max) {
+            c.n.remove();
+            continue;
+          }
+          alive = true;
+          c.vy += 640 * (dt / 1000);
+          c.px += c.vx * (dt / 1000);
+          c.py += c.vy * (dt / 1000);
+          const q = 1 - c.life / c.max;
+          const s = Math.max(0.4, c.size * q);
+          c.n.setAttribute('x', String(c.px - s / 2));
+          c.n.setAttribute('y', String(c.py - s / 2));
+          c.n.setAttribute('width', String(s));
+          c.n.setAttribute('height', String(s));
+          c.n.setAttribute('opacity', String(Math.min(1, q * 1.7)));
+        }
+        if (alive) requestAnimationFrame(frame);
+        else resolve();
+      }
+      requestAnimationFrame(frame);
+    });
+  }
+
+  /** FILTER shredding a token: a quick squash, then it comes apart in crumbs. */
+  async function shredToken(vis: TokenVis): Promise<void> {
+    const x = vis.x;
+    const y = vis.y;
+    const fill = COLOR_HEX[vis.color];
+    await new Promise<void>((resolve) => {
+      const t0 = performance.now();
+      const s0 = vis.s;
+      function frame(t: number) {
+        if (!vis.g.isConnected) {
+          resolve();
+          return;
+        }
+        const k = Math.min(1, (t - t0) / 55);
+        vis.s = s0 * (1 - 0.18 * k);
+        applyTransform(vis);
+        if (k < 1) requestAnimationFrame(frame);
+        else resolve();
+      }
+      requestAnimationFrame(frame);
+    });
+    sfx.trash();
+    vis.g.remove();
+    await burstFx(x, y - 14, fill, 12);
+  }
+
+  /** Drives a belt's flow-line dash offset from the token's travelled distance. */
+  function flowProgress(key: string): ((d: number) => void) | undefined {
+    const svg = svgRef.current;
+    if (!svg) return undefined;
+    const line = svg.querySelector(`g[data-conn="${key}"] .flow-line`);
+    if (!line) return undefined;
+    return (d: number) => line.setAttribute('stroke-dashoffset', String(-d * 0.5));
+  }
+
+  /** Lights a machine's glow + beacon for a moment while it works. */
+  function markActive(id: string | undefined) {
+    if (!id) return;
+    setActiveMachines((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    const timers = activeTimersRef.current;
+    const old = timers.get(id);
+    if (old) window.clearTimeout(old);
+    timers.set(
+      id,
+      window.setTimeout(() => {
+        timers.delete(id);
+        setActiveMachines((prev) => {
+          if (!prev.has(id)) return prev;
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }, 750),
+    );
+  }
+
   function setBeltLive(key: string, on: boolean) {
     const svg = svgRef.current;
     if (!svg) return;
@@ -356,7 +513,10 @@ export default function GameScreen({
       case 'spawn': {
         const p = anchorOf('IN', angleRef.current);
         const vis = createToken(p.x, p.y, e.color);
-        if (vis) tokensRef.current.set(e.token, vis);
+        if (vis) {
+          tokensRef.current.set(e.token, vis);
+          tokenNodeRef.current.set(e.token, 'IN');
+        }
         break;
       }
       case 'spawnAt': {
@@ -364,6 +524,8 @@ export default function GameScreen({
         const vis = createToken(p.x, p.y, e.color);
         if (vis) {
           tokensRef.current.set(e.token, vis);
+          tokenNodeRef.current.set(e.token, e.nodeId);
+          markActive(e.nodeId);
           await pulseToken(vis);
         }
         break;
@@ -376,10 +538,12 @@ export default function GameScreen({
         const conn = connsRef.current[key];
         if (conn) {
           setBeltLive(key, true);
-          const ok = await moveAlong(vis, connPoints(e.fromId, conn, angleRef.current));
+          const ok = await moveAlong(vis, connPoints(e.fromId, conn, angleRef.current), flowProgress(key));
           setBeltLive(key, false);
           if (!ok) break;
         }
+        tokenNodeRef.current.set(e.token, e.toId);
+        markActive(e.toId);
         const dest = placedRef.current[e.toId];
         if (dest && (dest.type === 'split' || (dest.type === 'filter' && vis.color === dest.color))) {
           await pulseToken(vis);
@@ -394,11 +558,12 @@ export default function GameScreen({
         const conn = connsRef.current[key];
         if (conn) {
           setBeltLive(key, true);
-          const ok = await moveAlong(vis, connPoints(e.fromId, conn, angleRef.current));
+          const ok = await moveAlong(vis, connPoints(e.fromId, conn, angleRef.current), flowProgress(key));
           setBeltLive(key, false);
           if (!ok) break;
         }
         dropToken(e.token);
+        tokenNodeRef.current.delete(e.token);
         break;
       }
       case 'moveToPort': {
@@ -407,17 +572,17 @@ export default function GameScreen({
           const fp = portPos(e.fromId, e.outIdx, placedRef.current, angleRef.current);
           await moveVisual(vis, fp.x, fp.y);
           dropToken(e.token);
+          tokenNodeRef.current.delete(e.token);
         }
         break;
       }
       case 'trash': {
         const vis = tokensRef.current.get(e.token);
         if (vis) {
-          const p = anchorOf(e.atId, angleRef.current);
-          await moveVisual(vis, p.x, TRASH_Y, 0.35);
-          vis.g.setAttribute('opacity', '0.3');
-          window.setTimeout(() => vis.g.remove(), 80);
           tokensRef.current.delete(e.token);
+          tokenNodeRef.current.delete(e.token);
+          markActive(e.atId);
+          await shredToken(vis);
         }
         break;
       }
@@ -425,6 +590,14 @@ export default function GameScreen({
         const vis = tokensRef.current.get(e.token);
         if (vis) await pulseToken(vis);
         dropToken(e.token);
+        tokenNodeRef.current.delete(e.token);
+        markActive(e.output);
+        const seenArrivals = (arrivalsRef.current[e.output] ?? 0) + 1;
+        arrivalsRef.current[e.output] = seenArrivals;
+        const wantArrivals = effLevel.target[e.output]?.length ?? 0;
+        if (vis && wantArrivals > 0 && seenArrivals === wantArrivals) {
+          void burstFx(vis.x, vis.y - 14, COLOR_HEX[e.color], 14);
+        }
         sfx.collect();
         setCollected((prev) => ({ ...prev, [e.output]: [...(prev[e.output] ?? []), e.color] }));
         break;
@@ -432,8 +605,12 @@ export default function GameScreen({
       case 'store': {
         const vis = tokensRef.current.get(e.token);
         if (vis) {
-          await moveVisual(vis, vis.x, vis.y, 0.3);
+          await moveVisual(vis, vis.x, vis.y + 5, 0.25);
           dropToken(e.token);
+        }
+        markActive(e.nodeId);
+        if (e.capacity) {
+          setBufFill((prev) => ({ ...prev, [e.nodeId]: { held: e.held, cap: e.capacity as number } }));
         }
         setBufLabels((prev) => ({
           ...prev,
@@ -443,20 +620,31 @@ export default function GameScreen({
       }
       case 'releaseStart':
         sfx.bufferRelease();
+        markActive(e.nodeId);
         setBufLabels((prev) => ({ ...prev, [e.nodeId]: '' }));
+        setBufFill((prev) => {
+          const next = { ...prev };
+          delete next[e.nodeId];
+          return next;
+        });
         break;
       case 'held':
         setBufLabels((prev) => ({
           ...prev,
           [e.nodeId]: e.held > 0 ? `stored ${e.held}` : '',
         }));
+        setBufFill((prev) =>
+          prev[e.nodeId] ? { ...prev, [e.nodeId]: { held: e.held, cap: prev[e.nodeId].cap } } : prev,
+        );
         break;
       case 'transformed': {
         sfx.transform();
+        markActive(tokenNodeRef.current.get(e.token));
         const vis = tokensRef.current.get(e.token);
         if (vis) {
           vis.color = e.color;
-          vis.img.setAttribute('href', TOKEN_IMG[e.color]);
+          vis.img.setAttribute('href', tokenImg(effLevel.chapter, e.color));
+          void burstFx(vis.x, vis.y - 14, COLOR_HEX[e.color], 7);
           await pulseToken(vis);
         }
         break;
@@ -489,6 +677,9 @@ export default function GameScreen({
     setFlashNodeId(null);
     setCollected({});
     setBufLabels({});
+    setBufFill({});
+    setActiveMachines(new Set());
+    arrivalsRef.current = {};
     clearTokens();
     const defs = placedDefs();
     const res = await simulate(effLevel, defs, conns, {
@@ -560,6 +751,8 @@ export default function GameScreen({
     setSelTray(null);
     setCollected({});
     setBufLabels({});
+    setBufFill({});
+    setActiveMachines(new Set());
     setResult(null);
     setWon(false);
     setShowStamp(false);
@@ -623,6 +816,7 @@ export default function GameScreen({
       placedNode = { ...node, route: { byColor, other: 1 } };
     }
     setPlaced({ ...placed, [cell]: placedNode });
+    setAssembly({ id: cell, fromCell: null, nonce: Date.now() });
     // Dropped onto a running belt: the board already split the belt around
     // the machine — adopt the spliced connections as-is.
     if (splice) setConns(splice);
@@ -641,6 +835,7 @@ export default function GameScreen({
     nextPlaced[newAnchor] = n;
     setPlaced(nextPlaced);
     setConns(next);
+    setAssembly({ id: newAnchor, fromCell: id, nonce: Date.now() });
     if (routeEditId === id) setRouteEditId(newAnchor);
     sfx.place();
     touchEdit();
@@ -737,9 +932,30 @@ export default function GameScreen({
   );
   const coachDone = [selTray !== null || placedAny, placedAny, hasInConn && hasOutConn, ranOnce];
   const coachNow = coachDone.indexOf(false);
+  // Visual tutorial layer (Level 1 only): a pulsing ring on the rack and
+  // the RUN button, a marker on the suggested cell, and an animated hand
+  // travelling the next connection the player needs to make. It teaches
+  // controls, never solutions — and only on the first level.
+  const coachActive = isFirst && !coachSkipped && coachNow >= 0;
+  const firstPlacedId = Object.keys(placed)[0] ?? null;
+  const coachCell =
+    coachActive && coachNow === 1
+      ? (Object.entries(level.solution.placements).find(([, d]) => d.type === 'filter')?.[0] ?? null)
+      : null;
+  const coachPath =
+    coachActive && coachNow === 2 && firstPlacedId
+      ? !hasInConn
+        ? { from: 'IN', to: firstPlacedId }
+        : !hasOutConn
+          ? { from: firstPlacedId, to: level.outputs[0] }
+          : null
+      : null;
 
   return (
     <div className="game-card">
+      <img className="game-backdrop" src={CHAPTER_BG[effLevel.chapter]} alt="" />
+      <DustOverlay />
+      <div className="vignette-overlay" />
       <div className="topbar">
         <button
           className="ghost"
@@ -782,7 +998,7 @@ export default function GameScreen({
       </div>
 
       <div className="brief">
-        <h2>{level.name}</h2>
+        <h2>{lang === 'id' ? level.nameId : level.name}</h2>
         <p dangerouslySetInnerHTML={{ __html: lang === 'en' ? level.brief : level.briefId }} />
         <div className="stream">
           <span>
@@ -790,7 +1006,7 @@ export default function GameScreen({
           </span>
           <span>
             {level.stream.map((c, i) => (
-              <img key={i} className="tok-mini" src={TOKEN_IMG[c]} alt={COLOR_NAME[c]} />
+              <img key={i} className="tok-mini" src={tokenImg(effLevel.chapter, c)} alt={COLOR_NAME[c]} />
             ))}
           </span>
           <span style={{ marginLeft: 10 }} dangerouslySetInnerHTML={{ __html: goalTextFor(level, lang) }} />
@@ -812,11 +1028,34 @@ export default function GameScreen({
                 {s}
               </span>
             ))}
+            {coachActive && (
+              <button className="coach-skip" onClick={() => setCoachSkipped(true)}>
+                Skip tutorial ✕
+              </button>
+            )}
           </div>
         )}
       </div>
 
       <div className="sandbox-card">
+        {noteOpen && noteTypes.length > 0 && (
+          <div className="machine-note">
+            <div className="machine-note-head">GUIDE BOOK — WATCH THEM WORK</div>
+            {noteTypes.map((t) => (
+              <div className="machine-note-row demo" key={t}>
+                <div className="machine-note-title">
+                  <img src={nodeImg(effLevel.chapter, t)} alt="" />
+                  <b>{nodeLabel({ type: t }).title}</b>
+                </div>
+                <MachineDemo type={t} chapter={effLevel.chapter} />
+                <span>{MACHINE_NOTE[t]}</span>
+              </div>
+            ))}
+            <button className="machine-note-btn" onClick={toggleNote}>
+              Close
+            </button>
+          </div>
+        )}
         <div className="rack-row">
           <span className="tray-label">
             {expert
@@ -830,10 +1069,14 @@ export default function GameScreen({
               return (
                 <button
                   key={n.uid}
-                  className={'tray-item' + (selTray === n.uid ? ' selected' : '')}
+                  className={
+                    'tray-item' +
+                    (selTray === n.uid ? ' selected' : '') +
+                    (coachActive && coachNow === 0 && n.type === 'filter' && n.color === 'R' ? ' coach-ring' : '')
+                  }
                   onClick={() => clickTray(n)}
                 >
-                  <img src={NODE_IMG[n.type]} alt={lb.title} />
+                  <img src={nodeImg(effLevel.chapter, n.type)} alt={lb.title} />
                   <span>
                     {lb.title}
                     {expert && left > 1 && <span className="count">×{left}</span>}
@@ -847,6 +1090,9 @@ export default function GameScreen({
               <span style={{ color: 'var(--ink-soft)', fontSize: 13 }}>(rack empty)</span>
             )}
           </span>
+          <button className="ghost note-toggle" onClick={toggleNote}>
+            {noteOpen ? 'Hide guide' : 'Guide book'}
+          </button>
         </div>
 
         {isFirst && <div className="hint">{hint}</div>}
@@ -886,6 +1132,9 @@ export default function GameScreen({
             ghost={selNode}
             running={running}
             bufLabels={bufLabels}
+            bufFill={bufFill}
+            activeMachines={activeMachines}
+            assembly={assembly}
             flashNodeId={flashNodeId}
             obstacles={expert?.obstacles}
             lockedIds={expert ? Object.keys(expert.locked) : []}
@@ -903,6 +1152,8 @@ export default function GameScreen({
             onEditRoute={openRouteEditor}
             onConnsChange={handleConnsChange}
             onDragRails={setDragRails}
+            coachCell={coachCell}
+            coachPath={coachPath}
           />
           {confetti.map((c, i) => (
             <span
@@ -973,7 +1224,11 @@ export default function GameScreen({
       </div>
 
       <div className="controls">
-        <button className="run" onClick={doRun} disabled={running}>
+        <button
+          className={'run' + (coachActive && coachNow === 3 ? ' coach-ring' : '')}
+          onClick={doRun}
+          disabled={running}
+        >
           ▶ RUN
         </button>
         <button
@@ -1009,7 +1264,7 @@ export default function GameScreen({
             <b>{o === 'OUT' ? 'Output' : 'Output ' + o}:</b>{' '}
             {(collected[o] ?? []).length ? (
               (collected[o] ?? []).map((c, i) => (
-                <img key={i} className="tok-mini" src={TOKEN_IMG[c]} alt={COLOR_NAME[c]} />
+                <img key={i} className="tok-mini" src={tokenImg(effLevel.chapter, c)} alt={COLOR_NAME[c]} />
               ))
             ) : (
               <span style={{ color: 'var(--ink-soft)' }}>(none yet)</span>
@@ -1018,7 +1273,7 @@ export default function GameScreen({
         ))}
       </div>
 
-      {result && (result.win ? renderWin(result) : renderFail(result))}
+      {result && (result.win ? renderWin(result, effLevel, lang) : renderFail(result))}
 
     </div>
   );
@@ -1026,6 +1281,8 @@ export default function GameScreen({
 
 function renderWin(
   r: { metrics: Metrics; stars: number; rails: number; par: number; refRails: number; isNewBest: boolean; prevBest: Metrics | null; leakText?: string },
+  level: Level,
+  lang: Lang,
 ): ReactNode {
   const m = r.metrics;
   const nodeOver = m.node > r.par;
@@ -1072,6 +1329,10 @@ function renderWin(
             — your best: Nodes {r.prevBest.node} · Space {r.prevBest.ruang} · Steps {r.prevBest.langkah}.
           </>
         ) : null}
+      </span>
+      <span className="concept-line">
+        <span className="concept-tag">{lang === 'id' ? 'SISTEM NYATA' : 'REAL SYSTEM'}</span>
+        {lang === 'id' ? level.conceptId : level.concept}
       </span>
     </div>
   );

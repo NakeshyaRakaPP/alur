@@ -1,4 +1,5 @@
 import { CHAPTERS, LEVELS, levelsOfChapter } from '../levels';
+import { BACKDROP_DECK_IMG, CHAPTER_BG } from '../nodeMeta';
 import type { ProgressMap } from '../progress';
 import type { GameMode } from './GameScreen';
 
@@ -14,7 +15,8 @@ export default function HomeScreen({ progress, expertProgress, demo, onMenu, onP
   const done = LEVELS.filter((l) => (progress[l.id]?.stars ?? 0) > 0).length;
 
   return (
-    <div>
+    <div className="home-screen">
+      <img className="home-backdrop" src={BACKDROP_DECK_IMG} alt="" />
       <button className="ghost menu-back" onClick={onMenu}>
         ← Main Menu
       </button>
@@ -29,6 +31,7 @@ export default function HomeScreen({ progress, expertProgress, demo, onMenu, onP
         const locked = demo && ch.n > 1;
         return (
           <section key={ch.n} className="chapter-block">
+            <img className="chapter-backdrop" src={CHAPTER_BG[ch.n]} alt="" />
             <h2>
               {ch.title}
               {locked && <span className="locked-note"> — full app only</span>}

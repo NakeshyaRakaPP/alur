@@ -4,11 +4,14 @@ export const chapter3: Level[] = [
   {
     id: 'c3-1',
     chapter: 3,
-    name: 'Level 11 — Buffer',
+    name: 'The Loading Dock',
+    nameId: 'Dermaga Muat',
     brief:
-      'Output only takes <b>packs of 3</b>.',
+      'The truck comes later, so goods must wait. Output only takes <b>packs of 3</b>.',
     briefId:
-      'Output hanya menerima <b>paket isi 3</b>.',
+      'Truk datang belakangan, jadi barang harus menunggu. Output hanya menerima <b>paket isi 3</b>.',
+    concept: 'Queue — holding things for a while is a real step, not a delay.',
+    conceptId: 'Antrean — menahan sesuatu sejenak adalah langkah nyata, bukan keterlambatan.',
     stream: ['R', 'R', 'R', 'R', 'R', 'R'],
     outputs: ['OUT'],
     target: { OUT: ['R', 'R', 'R', 'R', 'R', 'R'] },
@@ -45,11 +48,14 @@ export const chapter3: Level[] = [
   {
     id: 'c3-2',
     chapter: 3,
-    name: 'Level 12 — Filter First, Then Pack',
+    name: 'Quality Gate',
+    nameId: 'Gerbang Kualitas',
     brief:
-      'Pick the <b>green</b> out first. Then pack: <b>packs of 3</b>.',
+      'Check the goods before they ship. Pick the <b>green</b> out first. Then pack: <b>packs of 3</b>.',
     briefId:
-      'Ambil <b>hijau</b>nya dulu. Lalu paketkan: <b>paket isi 3</b>.',
+      'Periksa barang sebelum dikirim. Ambil <b>hijau</b>nya dulu. Lalu paketkan: <b>paket isi 3</b>.',
+    concept: 'Quality control — check first, then pack in fixed bundles.',
+    conceptId: 'Kontrol kualitas — periksa dulu, lalu paketkan dalam jumlah tetap.',
     stream: ['G', 'R', 'G', 'B', 'G', 'R', 'G', 'B', 'G', 'G'],
     outputs: ['OUT'],
     target: { OUT: ['G', 'G', 'G', 'G', 'G', 'G'] },
@@ -90,11 +96,14 @@ export const chapter3: Level[] = [
   {
     id: 'c3-3',
     chapter: 3,
-    name: 'Level 13 — Two Outputs, Two Treatments',
+    name: 'Two Stores',
+    nameId: 'Dua Toko',
     brief:
-      '<b>Output A:</b> packs of 3 green. <b>Output B:</b> blue, one by one.',
+      'One warehouse restocks two stores. <b>Output A:</b> packs of 3 green. <b>Output B:</b> blue, one by one.',
     briefId:
-      '<b>Output A:</b> paket hijau isi 3. <b>Output B:</b> biru, satu-satu.',
+      'Satu gudang memasok dua toko. <b>Output A:</b> paket hijau isi 3. <b>Output B:</b> biru, satu-satu.',
+    concept: 'Allocation — one source can feed many places, each with its own rules.',
+    conceptId: 'Alokasi — satu sumber bisa memasok banyak tempat, masing-masing dengan aturannya sendiri.',
     stream: ['G', 'B', 'G', 'B', 'G', 'B', 'G', 'B', 'G', 'B', 'G', 'B'],
     outputs: ['A', 'B'],
     target: { A: ['G', 'G', 'G', 'G', 'G', 'G'], B: ['B', 'B', 'B', 'B', 'B', 'B'] },
@@ -135,11 +144,14 @@ export const chapter3: Level[] = [
   {
     id: 'c3-4',
     chapter: 3,
-    name: 'Final — Full System',
+    name: 'Warehouse Day',
+    nameId: 'Sehari di Gudang',
     brief:
-      '<b>Output A:</b> packs of 3 green. <b>Output B:</b> blue made from red — real blue is trash.',
+      'A full day at the warehouse. <b>Output A:</b> packs of 3 green. <b>Output B:</b> blue made from red — real blue is trash.',
     briefId:
-      '<b>Output A:</b> paket hijau isi 3. <b>Output B:</b> biru dari merah — biru asli dibuang.',
+      'Sehari penuh di gudang. <b>Output A:</b> paket hijau isi 3. <b>Output B:</b> biru dari merah — biru asli dibuang.',
+    concept: 'End to end — receive, check, hold, and ship in one system.',
+    conceptId: 'Ujung ke ujung — menerima, memeriksa, menahan, dan mengirim dalam satu sistem.',
     stream: ['R', 'B', 'G', 'G', 'R', 'B', 'G', 'R', 'G', 'B', 'G', 'G'],
     outputs: ['A', 'B'],
     target: { A: ['G', 'G', 'G', 'G', 'G', 'G'], B: ['B', 'B', 'B'] },

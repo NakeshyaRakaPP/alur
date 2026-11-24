@@ -12,11 +12,11 @@ export interface ChapterMeta {
 }
 
 export const CHAPTERS: ChapterMeta[] = [
-  { n: 1, title: 'Chapter 1 — Basic Flow' },
-  { n: 2, title: 'Chapter 2 — Split & Merge' },
-  { n: 3, title: 'Chapter 3 — Real Systems' },
-  { n: 4, title: 'Chapter 4 — Merge Machines' },
-  { n: 5, title: 'Chapter 5 — Master Systems' },
+  { n: 1, title: 'Chapter 1 — The Bakery' },
+  { n: 2, title: 'Chapter 2 — The Parcel Hub' },
+  { n: 3, title: 'Chapter 3 — The Warehouse' },
+  { n: 4, title: 'Chapter 4 — The Assembly Plant' },
+  { n: 5, title: 'Chapter 5 — The Airport' },
 ];
 
 export const LEVELS: Level[] = attachExpert([

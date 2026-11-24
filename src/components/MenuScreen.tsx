@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
-import { BELT_IMG, LOGO_IMG, NODE_IMG, TOKEN_IMG } from '../nodeMeta';
+import { BACKDROP_MENU_IMG, BELT_IMG, LOGO_IMG, MACHINE_NOTE, NODE_IMG, TOKEN_IMG, nodeLabel } from '../nodeMeta';
+import { SYSTEMS_NOTES, SYSTEMS_NOTES_INTRO, SYSTEMS_NOTES_OUTRO } from '../systemsNotes';
+import MachineDemo from './MachineDemo';
 import { CHAPTERS, LEVELS } from '../levels';
+import type { NodeType } from '../types';
 import type { ProgressMap } from '../progress';
 import { sfx } from '../audio/sfx';
 
@@ -16,7 +19,7 @@ interface MenuScreenProps {
   onResetProgress: () => void;
 }
 
-type Panel = 'settings' | 'howto' | 'about' | null;
+type Panel = 'settings' | 'howto' | 'about' | 'notes' | null;
 
 /**
  * Title screen — the front door every offline puzzle game has: logo,
@@ -50,6 +53,7 @@ export default function MenuScreen(props: MenuScreenProps) {
 
   return (
     <div className="menu-screen">
+      <img className="menu-backdrop" src={BACKDROP_MENU_IMG} alt="" />
       <img className="menu-logo" src={LOGO_IMG} alt="ALUR" />
       <div className="menu-tag">Place machines. Connect belts. Run the flow.</div>
       {demo && <div className="proof-badge">DEMO VERSION</div>}
@@ -80,6 +84,9 @@ export default function MenuScreen(props: MenuScreenProps) {
         <button className="ghost menu-btn" onClick={() => openPanel('howto')}>
           ? HOW TO PLAY
         </button>
+        <button className="ghost menu-btn" onClick={() => openPanel('notes')}>
+          ☰ SYSTEMS NOTES
+        </button>
         <button className="ghost menu-btn" onClick={() => openPanel('about')}>
           ⓘ ABOUT
         </button>
@@ -96,7 +103,15 @@ export default function MenuScreen(props: MenuScreenProps) {
         >
           <div className="menu-panel">
             <div className="menu-panel-head">
-              <b>{panel === 'settings' ? 'SETTINGS' : panel === 'howto' ? 'HOW TO PLAY' : 'ABOUT'}</b>
+              <b>
+                {panel === 'settings'
+                  ? 'SETTINGS'
+                  : panel === 'howto'
+                    ? 'HOW TO PLAY'
+                    : panel === 'notes'
+                      ? 'SYSTEMS NOTES'
+                      : 'ABOUT'}
+              </b>
               <button
                 className="ghost menu-x"
                 onClick={() => {
@@ -186,6 +201,37 @@ export default function MenuScreen(props: MenuScreenProps) {
                   <span className="howto-glyph">⟳</span>
                   <span>Drag the empty floor to spin the camera.</span>
                 </div>
+                <div className="howto-sub">THE MACHINES — WATCH THEM WORK</div>
+                {(['filter', 'transform', 'split', 'tahan', 'sort', 'merge'] as NodeType[]).map((t) => (
+                  <div className="howto-demo" key={t}>
+                    <div className="machine-note-title">
+                      <img src={NODE_IMG[t]} alt="" />
+                      <b>{nodeLabel({ type: t }).title}</b>
+                    </div>
+                    <MachineDemo type={t} chapter={0} />
+                    <span>{MACHINE_NOTE[t]}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {panel === 'notes' && (
+              <div>
+                <p className="menu-note">{SYSTEMS_NOTES_INTRO}</p>
+                {SYSTEMS_NOTES.map((n) => (
+                  <div className="note-row" key={n.name}>
+                    <div className="note-head">
+                      <b>{n.name}</b>
+                      <span className="note-levels">{n.levels}</span>
+                    </div>
+                    <p>{n.means}</p>
+                    <p className="note-real">
+                      <span className="note-real-tag">IN THE REAL WORLD</span>
+                      {n.real}
+                    </p>
+                  </div>
+                ))}
+                <p className="menu-note">{SYSTEMS_NOTES_OUTRO}</p>
               </div>
             )}
 
@@ -194,6 +240,10 @@ export default function MenuScreen(props: MenuScreenProps) {
                 <p>
                   ALUR is a system-building puzzle. Tokens flow in, your machines process them, and the
                   output has to match the target — exactly.
+                </p>
+                <p>
+                  Every level is a real system in disguise — a bakery, a parcel hub, a warehouse, an
+                  assembly plant, an airport. Beat one and the game names the systems idea you just used.
                 </p>
                 <p>
                   {LEVELS.length} levels · {CHAPTERS.length} chapters · an Expert variant of every level, with fewer

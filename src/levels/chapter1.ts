@@ -4,11 +4,14 @@ export const chapter1: Level[] = [
   {
     id: 'c1-1',
     chapter: 1,
-    name: 'Level 1 — Filter',
+    name: 'Bad Dough',
+    nameId: 'Adonan Basi',
     brief:
-      '<b>Only red</b> may reach the Output.',
+      'The bakery is open. Bad dough must not be served. <b>Only red</b> may reach the Output.',
     briefId:
-      '<b>Hanya merah</b> yang boleh sampai ke Output.',
+      'Toko roti buka. Adonan basi tidak boleh disajikan. <b>Hanya merah</b> yang boleh sampai ke Output.',
+    concept: 'Validation — every real system throws away what does not belong.',
+    conceptId: 'Validasi — setiap sistem nyata membuang yang tidak seharusnya masuk.',
     stream: ['R', 'B', 'R', 'B', 'R', 'B'],
     outputs: ['OUT'],
     target: { OUT: ['R', 'R', 'R'] },
@@ -40,11 +43,14 @@ export const chapter1: Level[] = [
   {
     id: 'c1-2',
     chapter: 1,
-    name: 'Level 2 — Change',
+    name: 'Into the Oven',
+    nameId: 'Masuk Oven',
     brief:
-      '<b>All tokens</b> reach the Output — <b>all green</b>.',
+      'Time to bake. <b>All tokens</b> reach the Output — <b>all green</b>.',
     briefId:
-      '<b>Semua token</b> sampai ke Output — <b>semua hijau</b>.',
+      'Waktunya memanggang. <b>Semua token</b> sampai ke Output — <b>semua hijau</b>.',
+    concept: 'Transformation — a process changes what passes through it.',
+    conceptId: 'Transformasi — sebuah proses mengubah apa yang melewatinya.',
     stream: ['B', 'R', 'B', 'R'],
     outputs: ['OUT'],
     target: { OUT: ['G', 'G', 'G', 'G'] },
@@ -76,11 +82,14 @@ export const chapter1: Level[] = [
   {
     id: 'c1-3',
     chapter: 1,
-    name: 'Level 3 — Two-Machine Chain',
+    name: 'Mix, Then Bake',
+    nameId: 'Aduk, Lalu Panggang',
     brief:
-      'Only red may pass — and it must come out <b>green</b>.',
+      'Pick the good dough first, then bake it. Only red may pass — and it must come out <b>green</b>.',
     briefId:
-      'Hanya merah yang boleh lolos — dan harus keluar <b>hijau</b>.',
+      'Pilih adonan yang bagus dulu, baru panggang. Hanya merah yang boleh lolos — dan harus keluar <b>hijau</b>.',
+    concept: 'Sequence — the output of one step becomes the input of the next.',
+    conceptId: 'Urutan — keluaran satu langkah menjadi masukan langkah berikutnya.',
     stream: ['R', 'B', 'R', 'B', 'R', 'B'],
     outputs: ['OUT'],
     target: { OUT: ['G', 'G', 'G'] },
@@ -121,11 +130,14 @@ export const chapter1: Level[] = [
   {
     id: 'c1-4',
     chapter: 1,
-    name: 'Level 4 — Not Every Machine Is Used',
+    name: 'The Extra Mixer',
+    nameId: 'Mixer Cadangan',
     brief:
-      '<b>Only pure red</b> reaches the Output. Nothing else.',
+      'Not every tool gets used today. <b>Only pure red</b> reaches the Output. Nothing else.',
     briefId:
-      '<b>Hanya merah murni</b> yang sampai ke Output. Tidak ada yang lain.',
+      'Tidak semua alat dipakai hari ini. <b>Hanya merah murni</b> yang sampai ke Output. Tidak ada yang lain.',
+    concept: 'Necessity — a good system uses only what it needs.',
+    conceptId: 'Kebutuhan — sistem yang baik hanya memakai yang diperlukan.',
     stream: ['B', 'R', 'B', 'R', 'R', 'B'],
     outputs: ['OUT'],
     target: { OUT: ['R', 'R', 'R'] },
@@ -163,11 +175,14 @@ export const chapter1: Level[] = [
   {
     id: 'c1-5',
     chapter: 1,
-    name: 'Level 5 — Chapter 1 Test',
+    name: 'Opening Day',
+    nameId: 'Hari Pembukaan',
     brief:
-      'Output gets <b>4 blue</b> — made <b>from red</b>. Real blue does not count.',
+      'Opening day at the bakery. Output gets <b>4 blue</b> — made <b>from red</b>. Real blue does not count.',
     briefId:
-      'Output menerima <b>4 biru</b> — hasil <b>dari merah</b>. Biru asli tidak dihitung.',
+      'Hari pembukaan toko roti. Output menerima <b>4 biru</b> — hasil <b>dari merah</b>. Biru asli tidak dihitung.',
+    concept: 'Systems — small steps, working together, make a whole system.',
+    conceptId: 'Sistem — langkah-langkah kecil yang bekerja bersama membentuk satu sistem utuh.',
     stream: ['R', 'B', 'R', 'R', 'B', 'R'],
     outputs: ['OUT'],
     target: { OUT: ['B', 'B', 'B', 'B'] },

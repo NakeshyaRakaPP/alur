@@ -4,11 +4,14 @@ export const chapter2: Level[] = [
   {
     id: 'c2-1',
     chapter: 2,
-    name: 'Level 6 — Split',
+    name: 'Two Cities',
+    nameId: 'Dua Kota',
     brief:
-      '<b>Red → Output A. Blue → Output B.</b>',
+      'One pile of parcels, two cities waiting. <b>Red → Output A. Blue → Output B.</b>',
     briefId:
-      '<b>Merah → Output A. Biru → Output B.</b>',
+      'Satu tumpukan paket, dua kota menunggu. <b>Merah → Output A. Biru → Output B.</b>',
+    concept: 'Routing — one flow can feed many destinations.',
+    conceptId: 'Routing — satu aliran bisa menuju banyak tujuan.',
     stream: ['R', 'B', 'B', 'R', 'B', 'R'],
     outputs: ['A', 'B'],
     target: { A: ['R', 'R', 'R'], B: ['B', 'B', 'B'] },
@@ -45,11 +48,14 @@ export const chapter2: Level[] = [
   {
     id: 'c2-2',
     chapter: 2,
-    name: 'Level 7 — Different Fates',
+    name: 'Fragile!',
+    nameId: 'Mudah Pecah!',
     brief:
-      'Red becomes <b>green</b> → Output A. Blue stays <b>blue</b> → Output B.',
+      'Handle with care. Red becomes <b>green</b> → Output A. Blue stays <b>blue</b> → Output B.',
     briefId:
-      'Merah jadi <b>hijau</b> → Output A. Biru tetap <b>biru</b> → Output B.',
+      'Hati-hati, mudah pecah. Merah jadi <b>hijau</b> → Output A. Biru tetap <b>biru</b> → Output B.',
+    concept: 'Conditional paths — what an item is decides where it goes.',
+    conceptId: 'Jalur bersyarat — jenis barang menentukan ke mana ia pergi.',
     stream: ['R', 'B', 'R', 'B', 'R', 'B'],
     outputs: ['A', 'B'],
     target: { A: ['G', 'G', 'G'], B: ['B', 'B', 'B'] },
@@ -85,11 +91,14 @@ export const chapter2: Level[] = [
   {
     id: 'c2-3',
     chapter: 2,
-    name: 'Level 8 — Merge Back',
+    name: 'One Truck Out',
+    nameId: 'Satu Truk Keluar',
     brief:
-      'Red becomes <b>green</b>. All tokens end in the <b>same Output</b>.',
+      'Two routes, one truck at the end. Red becomes <b>green</b>. All tokens end in the <b>same Output</b>.',
     briefId:
-      'Merah jadi <b>hijau</b>. Semua token berakhir di <b>Output yang sama</b>.',
+      'Dua rute, satu truk di ujung. Merah jadi <b>hijau</b>. Semua token berakhir di <b>Output yang sama</b>.',
+    concept: 'Reconvergence — split paths can join back into one.',
+    conceptId: 'Penggabungan kembali — jalur yang berpisah bisa menyatu lagi.',
     stream: ['R', 'B', 'R', 'B'],
     outputs: ['OUT'],
     target: { OUT: ['G', 'B', 'G', 'B'] },
@@ -125,11 +134,14 @@ export const chapter2: Level[] = [
   {
     id: 'c2-4',
     chapter: 2,
-    name: 'Level 9 — Sort',
+    name: 'Sort the Mail',
+    nameId: 'Sortir Surat',
     brief:
-      'Mixed colors in. <b>Grouped by color</b> out.',
+      'The morning pile is a mess. Mixed colors in. <b>Grouped by color</b> out.',
     briefId:
-      'Warna campur masuk. Keluar <b>berkelompok per warna</b>.',
+      'Tumpukan pagi berantakan. Warna campur masuk. Keluar <b>berkelompok per warna</b>.',
+    concept: 'Classification — group things first, then handle them in batches.',
+    conceptId: 'Klasifikasi — kelompokkan dulu, lalu tangani per kelompok.',
     stream: ['G', 'R', 'B', 'G', 'B', 'R'],
     outputs: ['OUT'],
     target: { OUT: ['R', 'R', 'B', 'B', 'G', 'G'] },
@@ -161,11 +173,14 @@ export const chapter2: Level[] = [
   {
     id: 'c2-5',
     chapter: 2,
-    name: 'Level 10 — Chapter 2 Test',
+    name: 'Holiday Surge',
+    nameId: 'Lonjakan Liburan',
     brief:
-      '<b>Green</b> goes straight to the Output. The rest become <b>blue</b> first, then join it.',
+      'Holiday surge at the hub. <b>Green</b> goes straight to the Output. The rest become <b>blue</b> first, then join it.',
     briefId:
-      '<b>Hijau</b> langsung ke Output. Sisanya jadi <b>biru</b> dulu, lalu ikut ke sana.',
+      'Lonjakan liburan di hub. <b>Hijau</b> langsung ke Output. Sisanya jadi <b>biru</b> dulu, lalu ikut ke sana.',
+    concept: 'Distribution — getting every item to the right place.',
+    conceptId: 'Distribusi — mengantar setiap barang ke tempat yang tepat.',
     stream: ['R', 'G', 'B', 'G', 'R', 'G'],
     outputs: ['OUT'],
     target: { OUT: ['B', 'G', 'B', 'G', 'B', 'G'] },

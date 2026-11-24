@@ -4,11 +4,14 @@ export const chapter4: Level[] = [
   {
     id: 'c4-1',
     chapter: 4,
-    name: 'Level 15 — First Merge',
+    name: 'Bottle Meets Cap',
+    nameId: 'Botol Bertemu Tutup',
     brief:
-      'Pair <b>one red + one blue</b> → one <b>green</b>.',
+      'On the assembly line, two parts become one. Pair <b>one red + one blue</b> → one <b>green</b>.',
     briefId:
-      'Pasangkan <b>satu merah + satu biru</b> → jadi satu <b>hijau</b>.',
+      'Di lini perakitan, dua bagian menjadi satu. Pasangkan <b>satu merah + satu biru</b> → jadi satu <b>hijau</b>.',
+    concept: 'Assembly — two parts, arriving together, become one product.',
+    conceptId: 'Perakitan — dua bagian yang datang bersama menjadi satu produk.',
     stream: ['R', 'B', 'R', 'B', 'R', 'B'],
     outputs: ['OUT'],
     target: { OUT: ['G', 'G', 'G'] },
@@ -44,11 +47,14 @@ export const chapter4: Level[] = [
   {
     id: 'c4-2',
     chapter: 4,
-    name: 'Level 16 — Merge, Then Pack',
+    name: 'Box the Pairs',
+    nameId: 'Masukkan ke Boks',
     brief:
-      'Pair red + blue → green. Then pack: <b>packs of 3</b>.',
+      'Assemble first, then box them up. Pair red + blue → green. Then pack: <b>packs of 3</b>.',
     briefId:
-      'Pasangkan merah + biru → hijau. Lalu paketkan: <b>paket isi 3</b>.',
+      'Rakit dulu, baru masukkan ke boks. Pasangkan merah + biru → hijau. Lalu paketkan: <b>paket isi 3</b>.',
+    concept: 'Assembly, then batching — build the product, then pack it.',
+    conceptId: 'Perakitan, lalu pengemasan — buat produknya, lalu paketkan.',
     stream: ['R', 'B', 'R', 'B', 'R', 'B', 'R', 'B', 'R', 'B', 'R', 'B'],
     outputs: ['OUT'],
     target: { OUT: ['G', 'G', 'G', 'G', 'G', 'G'] },
@@ -98,11 +104,14 @@ export const chapter4: Level[] = [
   {
     id: 'c4-3',
     chapter: 4,
-    name: 'Level 17 — Feed Both Sides',
+    name: 'Two Lines In',
+    nameId: 'Dua Lini Masuk',
     brief:
-      'Green is trash. Pair <b>red + blue</b> → green — fed by <b>two belts</b>.',
+      'The line eats from two sides. Green is trash. Pair <b>red + blue</b> → green — fed by <b>two belts</b>.',
     briefId:
-      'Hijau dibuang. Pasangkan <b>merah + biru</b> → hijau — masuk lewat <b>dua belt</b>.',
+      'Lini ini makan dari dua sisi. Hijau dibuang. Pasangkan <b>merah + biru</b> → hijau — masuk lewat <b>dua belt</b>.',
+    concept: 'Balanced inputs — a merge starves when one side runs dry.',
+    conceptId: 'Masukan seimbang — gabungan akan kelaparan kalau satu sisi kering.',
     stream: ['R', 'B', 'G', 'R', 'B', 'G', 'R', 'B', 'G'],
     outputs: ['OUT'],
     target: { OUT: ['G', 'G', 'G'] },
@@ -148,11 +157,14 @@ export const chapter4: Level[] = [
   {
     id: 'c4-4',
     chapter: 4,
-    name: 'Level 18 — Full Merge System',
+    name: 'The Whole Line',
+    nameId: 'Seluruh Lini',
     brief:
-      '<b>Output A:</b> packs of 3 green. <b>Output B:</b> green from red + blue pairs.',
+      'The whole plant line, end to end. <b>Output A:</b> packs of 3 green. <b>Output B:</b> green from red + blue pairs.',
     briefId:
-      '<b>Output A:</b> paket hijau isi 3. <b>Output B:</b> hijau dari pasangan merah + biru.',
+      'Seluruh lini pabrik, dari ujung ke ujung. <b>Output A:</b> paket hijau isi 3. <b>Output B:</b> hijau dari pasangan merah + biru.',
+    concept: 'Synchronization — many parts moving in one rhythm.',
+    conceptId: 'Sinkronisasi — banyak bagian bergerak dalam satu irama.',
     stream: ['G', 'R', 'G', 'B', 'G', 'R', 'G', 'B', 'G', 'R', 'G', 'B'],
     outputs: ['A', 'B'],
     target: { A: ['G', 'G', 'G', 'G', 'G', 'G'], B: ['G', 'G', 'G'] },

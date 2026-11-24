@@ -46,8 +46,10 @@ import {
   splitPortDirs,
 } from '../geometry';
 import type { DragCtx, DragHover, Point } from '../geometry';
-import { BELT_IMG, COLOR_HEX, INPUT_IMG, NODE_IMG, OUTPUT_IMG, nodeLabel, splitRoutingOf } from '../nodeMeta';
+import { BELT_IMG, COLOR_HEX, FLOOR_TEX_IMG, inputImg, nodeImg, nodeLabel, outputImg, splitRoutingOf } from '../nodeMeta';
 import { ensureMasks, masksReady, spriteOpaque } from '../sprites';
+import { ASM_GRID, ASM_MS, blockAnim, easeOutCubic, peekBlocks, sampleSprite } from '../assembly';
+import type { SpriteBlock } from '../assembly';
 import type { SpriteKind } from '../sprites';
 import type { ColorCode, Conns, Level, NodeDef, PlacedNode, PortIdx } from '../types';
 
@@ -59,6 +61,8 @@ export interface BoardProps {
   ghost: NodeDef | null;
   running: boolean;
   bufLabels: Record<string, string>;
+  bufFill: Record<string, { held: number; cap: number }>;
+  activeMachines: ReadonlySet<string>;
   flashNodeId: string | null;
   svgRef: RefObject<SVGSVGElement>;
   tokenLayerRef: RefObject<SVGGElement>;
@@ -70,6 +74,13 @@ export interface BoardProps {
   stuckCell?: string | null;
   /** Camera azimuth in degrees (0 = classic view). The board re-projects everything from it. */
   angle: number;
+  /** Self-assembly trigger: the machine at `id` builds itself pixel by
+   *  pixel; fromCell set = its blocks stream in from that old anchor. */
+  assembly: { id: string; fromCell: string | null; nonce: number } | null;
+  /** Visual tutorial (Level 1): a pulsing marker + hand on this cell. */
+  coachCell?: string | null;
+  /** Visual tutorial: an animated hand travelling between two nodes. */
+  coachPath?: { from: string; to: string } | null;
   /** Reports camera rotations from floor drags; the owner keeps the angle so the token layer shares it. */
   onAngleChange: (deg: number) => void;
   onPlace: (cell: string, splice: Conns | null) => void;
@@ -176,8 +187,39 @@ function beltTilesFor(
 const HOLD_MS = 220;
 
 export default function Board(props: BoardProps) {
-  const { level, placed, conns, ghost, bufLabels, flashNodeId } = props;
+  const { level, placed, conns, ghost, bufLabels, bufFill, activeMachines, flashNodeId } = props;
   const angle = props.angle;
+  // Self-assembly animation state: driven by the owner's assembly
+  // trigger; a rAF loop ticks `now` until the build completes.
+  const [asmTick, setAsmTick] = useState<{ id: string; fromCell: string | null; start: number; now: number } | null>(null);
+  const asmNonceRef = useRef(0);
+  useEffect(() => {
+    const req = props.assembly;
+    if (!req || req.nonce === asmNonceRef.current) return;
+    asmNonceRef.current = req.nonce;
+    const t = props.placed[req.id]?.type;
+    if (!t) return;
+    if (!peekBlocks(props.level.chapter, t)) {
+      void sampleSprite(props.level.chapter, t);
+      return;
+    }
+    const start = performance.now();
+    setAsmTick({ id: req.id, fromCell: req.fromCell, start, now: start });
+    let raf = 0;
+    const loop = () => {
+      const now = performance.now();
+      if (now - start >= ASM_MS + 60) {
+        setAsmTick(null);
+        return;
+      }
+      setAsmTick({ id: req.id, fromCell: req.fromCell, start, now });
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.assembly]);
+
   const [drag, setDrag] = useState<DragState | null>(null);
   const [hoverCell, setHoverCell] = useState<string | null>(null);
   const [flashCellKey, setFlashCellKey] = useState<string | null>(null);
@@ -219,13 +261,13 @@ export default function Board(props: BoardProps) {
 
   useEffect(() => {
     let alive = true;
-    ensureMasks().then(() => {
+    ensureMasks(props.level.chapter).then(() => {
       if (alive) setMaskVersion((v) => v + 1);
     });
     return () => {
       alive = false;
     };
-  }, []);
+  }, [props.level.chapter]);
 
   function flashCell(cell: string) {
     setFlashCellKey(cell);
@@ -263,7 +305,7 @@ export default function Board(props: BoardProps) {
   function machineAtPoint(pt: Point): string | null {
     const p = propsRef.current;
     const ang = angleRef.current;
-    if (!masksReady()) {
+    if (!masksReady(p.level.chapter)) {
       const cell = pickCell(pt.x, pt.y, ang);
       return cell ? machineAtCell(cell, p.placed) : null;
     }
@@ -277,7 +319,7 @@ export default function Board(props: BoardProps) {
       const S = 112 * (fp.w === 2 ? 1.25 : 1);
       const u = (pt.x - (ctr.x - S / 2)) / S;
       const v = (pt.y - (ctr.y + 12 - S)) / S;
-      if (u >= 0 && u < 1 && v >= 0 && v < 1 && spriteOpaque(spriteKindOf(id), u, v)) return id;
+      if (u >= 0 && u < 1 && v >= 0 && v < 1 && spriteOpaque(p.level.chapter, spriteKindOf(id), u, v)) return id;
     }
     return null;
   }
@@ -978,6 +1020,13 @@ export default function Board(props: BoardProps) {
         <clipPath id="tokClip">
           <rect x={-20} y={-38} width={40} height={40} />
         </clipPath>
+        <radialGradient id="machineGlow">
+          <stop offset="0%" stopColor="#FFA02E" stopOpacity="0.55" />
+          <stop offset="100%" stopColor="#FFA02E" stopOpacity="0" />
+        </radialGradient>
+        <pattern id="floorTex" width="168" height="168" patternUnits="userSpaceOnUse">
+          <image href={FLOOR_TEX_IMG} width="168" height="168" />
+        </pattern>
       </defs>
 
       <rect x={0} y={0} width={960} height={560} fill="#191C21" />
@@ -987,16 +1036,38 @@ export default function Board(props: BoardProps) {
           pixel 2.5D tileset survives any azimuth. Billboards (machines,
           tokens, labels) render outside this group, unwarped. */}
       <g transform={boardWarpTransform(angle)}>
+        {(() => {
+          const corners = [isoCenter(0, 0), isoCenter(COLS - 1, 0), isoCenter(COLS - 1, ROWS - 1), isoCenter(0, ROWS - 1)];
+          const cx = corners.reduce((s, p) => s + p.x, 0) / 4;
+          const cy = corners.reduce((s, p) => s + p.y, 0) / 4;
+          const exp = (f: number, dy = 0) =>
+            corners.map((p) => `${cx + (p.x - cx) * f},${cy + (p.y - cy) * f + dy}`).join(' ');
+          return (
+            <g className="board-rim">
+              <polygon points={exp(1.22, 13)} fill="#0B0D10" />
+              <polygon points={exp(1.16, 7)} fill="#14171C" />
+              <polygon points={exp(1.1)} fill="#1E2229" />
+              <polygon points={exp(1.1)} fill="none" stroke="#0F1114" strokeWidth={9} />
+              <polygon points={exp(1.1)} fill="none" stroke="#C96A12" strokeWidth={9} strokeDasharray="15 11" opacity={0.5} />
+              {corners.map((p, i) => (
+                <circle
+                  key={i}
+                  cx={cx + (p.x - cx) * 1.1}
+                  cy={cy + (p.y - cy) * 1.1}
+                  r={3}
+                  fill="#4A545F"
+                  stroke="#101216"
+                  strokeWidth={1.2}
+                />
+              ))}
+            </g>
+          );
+        })()}
         {floorCells.map(({ c, r }) => {
           const ctr = isoCenter(c, r);
           return (
             <g key={c + ',' + r}>
-              <polygon
-                points={diamondPoints(ctr, 0.6)}
-                className="floor-cell"
-                fill={(c + r) % 2 === 0 ? '#262A31' : '#2B2F36'}
-              />
-              <circle cx={ctr.x} cy={ctr.y} r={1.7} className="floor-dot" />
+              <polygon points={diamondPoints(ctr, 0.6)} className="floor-cell" fill="url(#floorTex)" />
             </g>
           );
         })}
@@ -1057,6 +1128,19 @@ export default function Board(props: BoardProps) {
                 </g>
               );
             })}
+            <polyline
+              className="flow-line"
+              points={[
+                machineCell(key.split(':')[0]),
+                ...conns[key].path,
+                ...(conns[key].to ? [machineCell(conns[key].to)] : []),
+              ]
+                .map((c) => {
+                  const cc = cellCenter(c);
+                  return `${cc.x},${cc.y}`;
+                })
+                .join(' ')}
+            />
           </g>
           );
         })}
@@ -1110,12 +1194,17 @@ export default function Board(props: BoardProps) {
         )}
       </g>
 
-      <text x={480} y={545} className="trash-label">
-        — filtered-out tokens are discarded here —
-      </text>
-
       {machineEntries.map(({ id }) => (
-        <MachineSprite key={id} id={id} placed={displayPlaced} flash={flashNodeId === id} angle={angle} />
+        <MachineSprite
+          key={id}
+          id={id}
+          chapter={props.level.chapter}
+          placed={displayPlaced}
+          flash={flashNodeId === id}
+          active={activeMachines.has(id)}
+          angle={angle}
+          asm={asmTick && asmTick.id === id ? { p: (asmTick.now - asmTick.start) / ASM_MS, fromCell: asmTick.fromCell } : null}
+        />
       ))}
       {holdId &&
         (() => {
@@ -1200,14 +1289,21 @@ export default function Board(props: BoardProps) {
           </g>
         );
       })()}
+      {props.coachCell && <CoachCellMark cell={props.coachCell} angle={angle} />}
+      {props.coachPath && (
+        <CoachHand
+          from={fpCenterOf(props.coachPath.from, displayPlaced, angle)}
+          to={fpCenterOf(props.coachPath.to, displayPlaced, angle)}
+        />
+      )}
       {ghost && hoverCell && ghostPlaceable && (
-        <GhostSprite cell={hoverCell} type={ghost.type} angle={angle} />
+        <GhostSprite cell={hoverCell} type={ghost.type} angle={angle} chapter={props.level.chapter} />
       )}
 
       <g ref={props.tokenLayerRef} />
 
       {allIds.map((id) => (
-        <MachineLabel key={'lb-' + id} id={id} placed={displayPlaced} bufLabels={bufLabels} locked={lockedSet.has(id)} angle={angle} />
+        <MachineLabel key={'lb-' + id} id={id} placed={displayPlaced} bufLabels={bufLabels} bufFill={bufFill} locked={lockedSet.has(id)} angle={angle} />
       ))}
 
       {Object.keys(displayPlaced)
@@ -1238,40 +1334,182 @@ function footprintCellsAtSafe(anchorKey: string, type: NodeDef['type']): string[
   return cells;
 }
 
-function GhostSprite({ cell, type, angle }: { cell: string; type: NodeDef['type']; angle: number }) {
+function GhostSprite({
+  cell,
+  type,
+  angle,
+  chapter,
+}: {
+  cell: string;
+  type: NodeDef['type'];
+  angle: number;
+  chapter: number;
+}) {
   const a = parseCell(cell);
   const fp = footprintOfType(type);
   const c = isoCenter(a.c + (fp.w - 1) / 2, a.r + (fp.d - 1) / 2, angle);
   const S = 112 * (fp.w === 2 ? 1.25 : 1);
   return (
-    <image x={c.x - S / 2} y={c.y + 12 - S} width={S} height={S} opacity={0.45} href={NODE_IMG[type]} />
+    <image x={c.x - S / 2} y={c.y + 12 - S} width={S} height={S} opacity={0.45} href={nodeImg(chapter, type)} />
+  );
+}
+
+/** The tutorial hand: a cursor arrow with a pulsing tip. Drawn at the
+ *  local origin — callers position or motion-path it. */
+function CoachHandGlyph() {
+  return (
+    <g>
+      <circle r={6} className="coach-tip" />
+      <polygon
+        points="0,0 0,17 4.6,13 7.2,20.5 10.2,19 7.4,11.8 12.6,11.8"
+        className="coach-hand-poly"
+      />
+    </g>
+  );
+}
+
+/** Tutorial step "place it here": a pulsing ring on the suggested cell
+ *  with the hand bobbing above it, pointing down. */
+function CoachCellMark({ cell, angle }: { cell: string; angle: number }) {
+  const a = parseCell(cell);
+  const c = isoCenter(a.c, a.r, angle);
+  return (
+    <g className="coach-mark">
+      <circle cx={c.x} cy={c.y} r={25} className="coach-ring-svg" />
+      <g transform={`translate(${c.x + 12} ${c.y - 42})`}>
+        <g>
+          <animateTransform
+            attributeName="transform"
+            type="translate"
+            values="0 0; 0 7; 0 0"
+            dur="1.1s"
+            repeatCount="indefinite"
+          />
+          <CoachHandGlyph />
+        </g>
+      </g>
+    </g>
+  );
+}
+
+/** Tutorial step "connect these": rings on both nodes, a marching
+ *  dashed line between them, and the hand riding it on a loop — the
+ *  exact gesture the player is about to make (hold, then click). */
+function CoachHand({ from, to }: { from: Point; to: Point }) {
+  const d = `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
+  return (
+    <g className="coach-mark">
+      <path d={d} className="coach-dash" />
+      <circle cx={from.x} cy={from.y} r={25} className="coach-ring-svg" />
+      <circle cx={to.x} cy={to.y} r={25} className="coach-ring-svg" />
+      <g>
+        <animateMotion dur="1.9s" repeatCount="indefinite" path={d} />
+        <CoachHandGlyph />
+      </g>
+    </g>
   );
 }
 
 function MachineSprite({
   id,
+  chapter,
   placed,
   flash,
+  active,
   angle,
+  asm,
 }: {
   id: string;
+  chapter: number;
   placed: Record<string, PlacedNode>;
   flash: boolean;
+  active: boolean;
   angle: number;
+  asm: { p: number; fromCell: string | null } | null;
 }) {
   const n = placed[id] ?? null;
   const isFixedId = id === 'IN' || id === 'OUT' || id === 'A' || id === 'B';
-  const sprite = id === 'IN' ? INPUT_IMG : isFixedId ? OUTPUT_IMG : NODE_IMG[n!.type];
+  const sprite = id === 'IN' ? inputImg(chapter) : isFixedId ? outputImg(chapter) : nodeImg(chapter, n!.type);
   const ctr = fpCenterOf(id, placed, angle);
   const fp = footprintOf(id, placed);
   const S = 112 * (fp.w === 2 ? 1.25 : 1);
+  const blocks = asm && n ? peekBlocks(chapter, n.type) : null;
+  const fromCtr =
+    asm?.fromCell && n ? fpCenterOf(asm.fromCell, { ...placed, [asm.fromCell]: n }, angle) : null;
+  // The finished sprite fades in over the last stretch while the blocks
+  // dissolve — no hard pop at the swap.
+  const fade = asm ? Math.max(0, Math.min(1, (asm.p - 0.82) / 0.18)) : 0;
   return (
     <g data-depth={machineDepth(id, placed, angle)} {...(!isFixedId ? { 'data-mach': id } : {})}>
       <g className={'node-inner' + (flash ? ' errflash' : '')}>
         <polygon points={footprintQuad(id, placed, angle)} className="node-shadow" />
-        <image x={ctr.x - S / 2} y={ctr.y + 12 - S} width={S} height={S} href={sprite} />
+        {active && (
+          <>
+            <ellipse cx={ctr.x} cy={ctr.y + 9} rx={S * 0.44} ry={13} fill="url(#machineGlow)" className="machine-glow" />
+            <circle cx={ctr.x + S * 0.31} cy={ctr.y + 5} r={3.4} fill="#FFA02E" className="machine-lamp" />
+          </>
+        )}
+        <image
+          x={ctr.x - S / 2}
+          y={ctr.y + 12 - S}
+          width={S}
+          height={S}
+          href={sprite}
+          opacity={asm ? fade : undefined}
+        />
+        {asm && blocks && (
+          <g opacity={1 - fade * 0.9}>
+            {blocks.map((b) => (
+              <AsmBlock key={b.bx + ',' + b.by} b={b} type={n!.type} ctr={ctr} S={S} p={asm.p} fromCtr={fromCtr} />
+            ))}
+          </g>
+        )}
       </g>
     </g>
+  );
+}
+
+/** One sampled sprite pixel-block of the self-assembly effect. */
+function AsmBlock({
+  b,
+  type,
+  ctr,
+  S,
+  p,
+  fromCtr,
+}: {
+  b: SpriteBlock;
+  type: PlacedNode['type'];
+  ctr: Point;
+  S: number;
+  p: number;
+  fromCtr: Point | null;
+}) {
+  const bs = S / ASM_GRID;
+  const { rank, ox, oy } = blockAnim(type, b);
+  const lt = Math.max(0, Math.min(1, (p - rank * 0.55) / 0.38));
+  if (lt <= 0) return null;
+  const e = easeOutCubic(lt);
+  const tx = ctr.x - S / 2 + (b.bx + 0.5) * bs;
+  const ty = ctr.y + 12 - S + (b.by + 0.5) * bs;
+  let sx = tx + ox;
+  let sy = ty + oy;
+  if (fromCtr) {
+    sx = fromCtr.x - S / 2 + (b.bx + 0.5) * bs;
+    sy = fromCtr.y + 12 - S + (b.by + 0.5) * bs;
+  }
+  const x = sx + (tx - sx) * e;
+  let y = sy + (ty - sy) * e;
+  if (fromCtr) y -= Math.sin(e * Math.PI) * 12;
+  return (
+    <rect
+      x={x - bs / 2}
+      y={y - bs / 2}
+      width={bs + 0.8}
+      height={bs + 0.8}
+      fill={b.color}
+      opacity={Math.min(1, lt * 3)}
+    />
   );
 }
 
@@ -1279,12 +1517,14 @@ function MachineLabel({
   id,
   placed,
   bufLabels,
+  bufFill,
   locked,
   angle,
 }: {
   id: string;
   placed: Record<string, PlacedNode>;
   bufLabels: Record<string, string>;
+  bufFill: Record<string, { held: number; cap: number }>;
   locked?: boolean;
   angle: number;
 }) {
@@ -1323,6 +1563,19 @@ function MachineLabel({
         <text x={a.x + 36} y={a.y - 78} className="buf-label">
           {bufLabels[id] ?? ''}
         </text>
+      )}
+      {n && n.type === 'tahan' && bufFill[id] && bufFill[id].cap > 0 && (
+        <g className="buf-bar">
+          <rect x={a.x - 18} y={a.y + 43} width={36} height={5} rx={2} className="buf-bar-bg" />
+          <rect
+            x={a.x - 18}
+            y={a.y + 43}
+            width={36 * Math.min(1, bufFill[id].held / bufFill[id].cap)}
+            height={5}
+            rx={2}
+            className="buf-bar-fill"
+          />
+        </g>
       )}
       {locked && (
         <g className="lock-badge" transform={`translate(${a.x + 34} ${a.y - 96})`}>

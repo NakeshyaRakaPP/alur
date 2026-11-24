@@ -78,10 +78,16 @@ export interface Level {
   id: string;
   chapter: number;
   name: string;
+  /** Scenario name in Indonesian (shown via the translate toggle). */
+  nameId: string;
   /** Problem statement in English (default). */
   brief: string;
   /** Problem statement in Indonesian (shown via the translate toggle). */
   briefId: string;
+  /** The real-systems concept this level trains (win screen, English). */
+  concept: string;
+  /** The same concept line in Indonesian. */
+  conceptId: string;
   stream: ColorCode[];
   outputs: OutputId[];
   target: Partial<Record<OutputId, ColorCode[]>>;
