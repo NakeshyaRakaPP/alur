@@ -1303,7 +1303,6 @@ export default function GameScreen({
         </div>
 
         <div className="board-wrap">
-          <div className="rotate-hint">Turn your phone sideways — the board gets much bigger.</div>
           <Board
             level={effLevel}
             placed={placed}

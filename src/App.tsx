@@ -4,13 +4,79 @@ import type { GameMode } from './components/GameScreen';
 import HomeScreen from './components/HomeScreen';
 import MenuScreen from './components/MenuScreen';
 import { isBetter } from './engine';
-import { LOGO_IMG } from './nodeMeta';
+import {
+  BACKDROP_DECK_IMG,
+  BACKDROP_MENU_IMG,
+  BELT_IMG,
+  CHAPTER_BG,
+  FLOOR_TEX_IMG,
+  HOST_POSES,
+  LOGO_IMG,
+  inputImg,
+  nodeImg,
+  outputImg,
+  tokenImg,
+} from './nodeMeta';
 import { isMuted, setMuted, sfx } from './audio/sfx';
 import { isMusicMuted, setMusicMuted, startMusic } from './audio/music';
 import { CHAPTERS, LEVELS, levelById, levelsOfChapter, nextLevel } from './levels';
 import { loadExpertProgress, loadProgress, saveExpertProgress, saveProgress } from './progress';
 import type { ProgressMap } from './progress';
-import type { Level, Metrics } from './types';
+import type { Level, Metrics, NodeType } from './types';
+
+/** Every image the game will ever draw, so the loading screen can pull
+ *  them all in once — no sprite ever pops in mid-game afterwards. */
+function preloadList(): string[] {
+  const urls = new Set<string>();
+  urls.add(LOGO_IMG);
+  urls.add(BACKDROP_MENU_IMG);
+  urls.add(BACKDROP_DECK_IMG);
+  urls.add(FLOOR_TEX_IMG);
+  Object.values(HOST_POSES).forEach((u) => urls.add(u));
+  Object.values(CHAPTER_BG).forEach((u) => urls.add(u));
+  Object.values(BELT_IMG.steel).forEach((u) => urls.add(u));
+  Object.values(BELT_IMG.live).forEach((u) => urls.add(u));
+  const types: NodeType[] = ['filter', 'transform', 'split', 'tahan', 'sort', 'merge'];
+  for (let ch = 0; ch <= 5; ch++) {
+    types.forEach((t) => urls.add(nodeImg(ch, t)));
+    urls.add(inputImg(ch));
+    urls.add(outputImg(ch));
+    (['R', 'G', 'B'] as const).forEach((c) => urls.add(tokenImg(ch, c)));
+  }
+  return [...urls];
+}
+
+function LoadingScreen({ pct }: { pct: number }) {
+  return (
+    <div className="boot-screen">
+      <img className="boot-pio" src={HOST_POSES.wave} alt="" />
+      <img className="boot-logo" src={LOGO_IMG} alt="ALUR" />
+      <div className="boot-tag">Place machines. Connect belts. Run the flow.</div>
+      <div className="boot-bar">
+        <div className="boot-fill" style={{ width: pct + '%' }} />
+      </div>
+      <div className="boot-pct">Loading the factory… {pct}%</div>
+    </div>
+  );
+}
+
+/** Portrait phones get a full-screen "turn your phone" gate (landscape
+ *  looks just like the PC version). Pure CSS decides when it shows;
+ *  the button lets a determined portrait player through anyway. */
+function RotateGate() {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
+  return (
+    <div className="rotate-gate">
+      <div className="rotate-phone" />
+      <h2>Turn your phone sideways</h2>
+      <p>ALUR plays best in landscape — the whole board, just like on PC.</p>
+      <button className="rotate-anyway" onClick={() => setDismissed(true)}>
+        Play in portrait anyway
+      </button>
+    </div>
+  );
+}
 
 const DEMO = import.meta.env.VITE_DEMO === '1';
 
@@ -21,11 +87,50 @@ type Screen =
   | { kind: 'gate' };
 
 export default function App() {
+  const [booted, setBooted] = useState(false);
+  const [bootPct, setBootPct] = useState(0);
   const [screen, setScreen] = useState<Screen>({ kind: 'menu' });
   const [progress, setProgress] = useState<ProgressMap>(() => loadProgress());
   const [expertProgress, setExpertProgress] = useState<ProgressMap>(() => loadExpertProgress());
   const [soundMuted, setSoundMuted] = useState<boolean>(() => isMuted());
   const [musicOff, setMusicOff] = useState<boolean>(() => isMusicMuted());
+
+  // Boot: preload every sprite once behind the loading screen. Errors
+  // count as loaded (a missing file must never hang the boot), and a
+  // hard 6-second cap boots the game regardless.
+  useEffect(() => {
+    const urls = preloadList();
+    const started = performance.now();
+    let done = 0;
+    let cancelled = false;
+    const finish = () => {
+      if (cancelled) return;
+      const wait = Math.max(0, 900 - (performance.now() - started));
+      window.setTimeout(() => {
+        if (!cancelled) setBooted(true);
+      }, wait);
+    };
+    const cap = window.setTimeout(finish, 6000);
+    if (urls.length === 0) finish();
+    urls.forEach((u) => {
+      const img = new Image();
+      const tick = () => {
+        done += 1;
+        if (!cancelled) setBootPct(Math.round((done / urls.length) * 100));
+        if (done >= urls.length) {
+          window.clearTimeout(cap);
+          finish();
+        }
+      };
+      img.onload = tick;
+      img.onerror = tick;
+      img.src = u;
+    });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(cap);
+    };
+  }, []);
 
   // Music may only start after a user gesture (autoplay rules): the
   // first pointerdown anywhere starts it, unless the user muted it.
@@ -97,7 +202,17 @@ export default function App() {
 
   const gameLevel = screen.kind === 'game' ? levelById(screen.levelId) : undefined;
 
+  if (!booted) {
+    return (
+      <>
+        <LoadingScreen pct={bootPct} />
+        <RotateGate />
+      </>
+    );
+  }
+
   return (
+    <>
     <div className="wrap">
       {screen.kind !== 'menu' && (
         <header>
@@ -200,6 +315,8 @@ export default function App() {
         </footer>
       )}
     </div>
+    <RotateGate />
+    </>
   );
 }
 
