@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { BACKDROP_MENU_IMG, BELT_IMG, LOGO_IMG, MACHINE_NOTE, NODE_IMG, TOKEN_IMG, nodeLabel } from '../nodeMeta';
 import { SYSTEMS_NOTES, SYSTEMS_NOTES_INTRO, SYSTEMS_NOTES_OUTRO } from '../systemsNotes';
-import MachineDemo from './MachineDemo';
+import GuideBook from './GuideBook';
 import { CHAPTERS, LEVELS } from '../levels';
 import type { NodeType } from '../types';
 import type { ProgressMap } from '../progress';
@@ -30,6 +30,8 @@ export default function MenuScreen(props: MenuScreenProps) {
   const { progress, expertProgress, demo, muted, musicMuted } = props;
   const [panel, setPanel] = useState<Panel>(null);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [bookOpen, setBookOpen] = useState(false);
+  const [tutArmed, setTutArmed] = useState(false);
 
   const done = LEVELS.filter((l) => (progress[l.id]?.stars ?? 0) > 0).length;
   const stars = LEVELS.reduce((s, l) => s + (progress[l.id]?.stars ?? 0), 0);
@@ -155,6 +157,19 @@ export default function MenuScreen(props: MenuScreenProps) {
                   </span>
                 </div>
                 <div className="set-row">
+                  <span>Tutorial</span>
+                  <button
+                    className="ghost menu-small"
+                    onClick={() => {
+                      sfx.click();
+                      localStorage.removeItem('alur.tutorial.done.v1');
+                      setTutArmed(true);
+                    }}
+                  >
+                    {tutArmed ? 'It will play in Level 1 ✓' : 'Watch it again'}
+                  </button>
+                </div>
+                <div className="set-row">
                   <span>Progress</span>
                   {!confirmReset ? (
                     <button
@@ -187,11 +202,11 @@ export default function MenuScreen(props: MenuScreenProps) {
               <div>
                 <div className="howto-row">
                   <img src={NODE_IMG.filter} alt="" />
-                  <span>Place machines on the grid.</span>
+                  <span>Take machines from the rack — click or drag them onto the grid.</span>
                 </div>
                 <div className="howto-row">
                   <img src={BELT_IMG.steel.ew} alt="" />
-                  <span>Hold a machine, pick Rail, click the target to lay a belt.</span>
+                  <span>Drag from a machine to the next machine to lay a belt. Click a machine for Delete / Move / Belt.</span>
                 </div>
                 <div className="howto-row">
                   <img src={TOKEN_IMG.R} alt="" />
@@ -201,17 +216,17 @@ export default function MenuScreen(props: MenuScreenProps) {
                   <span className="howto-glyph">⟳</span>
                   <span>Drag the empty floor to spin the camera.</span>
                 </div>
-                <div className="howto-sub">THE MACHINES — WATCH THEM WORK</div>
-                {(['filter', 'transform', 'split', 'tahan', 'sort', 'merge'] as NodeType[]).map((t) => (
-                  <div className="howto-demo" key={t}>
-                    <div className="machine-note-title">
-                      <img src={NODE_IMG[t]} alt="" />
-                      <b>{nodeLabel({ type: t }).title}</b>
-                    </div>
-                    <MachineDemo type={t} chapter={0} />
-                    <span>{MACHINE_NOTE[t]}</span>
-                  </div>
-                ))}
+                <div className="howto-sub">THE MACHINES</div>
+                <button
+                  className="ghost"
+                  onClick={() => {
+                    sfx.click();
+                    setBookOpen(true);
+                  }}
+                >
+                  Open the Guide Book — watch each machine work
+                </button>
+                {bookOpen && <GuideBook chapter={0} onClose={() => setBookOpen(false)} />}
               </div>
             )}
 

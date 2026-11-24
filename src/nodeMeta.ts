@@ -63,6 +63,14 @@ export const MACHINE_NOTE: Record<NodeType, string> = {
   merge: 'Takes one token from each belt in, joins them into a new color.',
 };
 
+export const HOST_IMG = ART + 'host.png';
+export const HOST_POSES = {
+  base: HOST_IMG,
+  wave: ART + 'host_wave.png',
+  point: ART + 'host_point.png',
+  cheer: ART + 'host_cheer.png',
+};
+
 export const INPUT_IMG = ART + 'node_input.png';
 export const OUTPUT_IMG = ART + 'node_output.png';
 

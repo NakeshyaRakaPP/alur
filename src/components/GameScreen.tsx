@@ -2,24 +2,35 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import Board from './Board';
 import DustOverlay from './DustOverlay';
-import MachineDemo from './MachineDemo';
+import GuideBook from './GuideBook';
 import { preloadAssemblies } from '../assembly';
 import { computeMetrics, isBetter, simulate, starsFor, starsForExpert } from '../engine';
 import type { Emit, Verdict } from '../engine';
 import { sfx } from '../audio/sfx';
-import { anchorOf, camBasis, connPoints, portPos, railsUsed, screenToGridFloat } from '../geometry';
-import { CHAPTER_BG, COLOR_HEX, COLOR_NAME, COLOR_NAME_ID, BELT_IMG, MACHINE_NOTE, nodeImg, tokenImg, nodeKey, nodeLabel, nodeName, splitRoutingOf, exclusiveSplitRouting } from '../nodeMeta';
+import { anchorOf, camBasis, cellCenter, connPoints, fpCenterOf, pickCell, portPos, railsUsed, screenToGridFloat } from '../geometry';
+import { CHAPTER_BG, COLOR_HEX, COLOR_NAME, COLOR_NAME_ID, BELT_IMG, HOST_POSES, MACHINE_NOTE, nodeImg, tokenImg, nodeKey, nodeLabel, nodeName, splitRoutingOf, exclusiveSplitRouting } from '../nodeMeta';
 import type { ColorCode, Conns, Level, Metrics, NodeDef, NodeType, OutputId, PlacedNode, PortIdx, SplitRouting } from '../types';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const FIRST_LEVEL_ID = 'c1-1';
 const CONFETTI_COLORS = ['#E5534B', '#2E6FDB', '#35A852', '#FF8C1A', '#FFA02E'];
-const COACH_STEPS = [
-  '1 · Pick a machine from the rack',
-  '2 · Place it on the board',
-  '3 · Connect INPUT → OUTPUT',
-  '4 · Press RUN',
+/** First-visit tutorial: Pio the foreman greets the player on Level 1,
+ *  spotlights each part of the job, and only moves on when the player
+ *  has actually done the step. Stored once done (or skipped). */
+const TUT_KEY = 'alur.tutorial.done.v1';
+const TUT_TEXT = [
+  "Hi! I'm Pio, your foreman. Welcome to your first system — I'll show you the job. It takes one minute.",
+  'This is the INPUT. Tokens come in here, from the left.',
+  'Look closer — the INCOMING pill. That is exactly what arrives, in that order. Read it every level.',
+  'And this is the OUTPUT, on the right. Tokens must leave here.',
+  'The TARGET pill is the job: these tokens, in this order, must come out. Turn what comes in into what must come out.',
+  'For this job you need the red FILTER. Take it from the rack — click it, or drag it onto the board.',
+  'Now put it on the board. The glowing cell is a good home for it.',
+  'Connect the belts: drag from the INPUT to your FILTER, then from the FILTER to the OUTPUT.',
+  'Press RUN and watch your system work!',
+  "You did it! That is the whole job, every level: read what comes in, build the system, match the target. If you forget how a machine works, this book shows you — it even shows them working.",
 ];
+const TUT_RUNNING_TEXT = 'Look at the board — your system is working!';
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -66,24 +77,6 @@ interface GameScreenProps {
   onBack: () => void;
 }
 
-function goalTextFor(level: Level, lang: Lang): string {
-  if (lang === 'id' && level.goalTextId) return level.goalTextId;
-  if (lang === 'en' && level.goalText) return level.goalText;
-  const names = lang === 'id' ? COLOR_NAME_ID : COLOR_NAME;
-  return (
-    'Target: ' +
-    level.outputs
-      .map(
-        (o) =>
-          '<b>' +
-          (o === 'OUT' ? 'Output' : 'Output ' + o) +
-          '</b> = ' +
-          (level.target[o] ?? []).map((c) => names[c]).join(', '),
-      )
-      .join(' &nbsp;|&nbsp; ')
-  );
-}
-
 export default function GameScreen({
   level,
   mode,
@@ -116,6 +109,9 @@ export default function GameScreen({
   const [placed, setPlaced] = useState<Record<string, PlacedNode>>(lockedInit);
   const [conns, setConns] = useState<Conns>({});
   const [selTray, setSelTray] = useState<number | null>(null);
+  const [carryPos, setCarryPos] = useState<{ x: number; y: number } | null>(null);
+  const [dragUid, setDragUid] = useState<number | null>(null);
+  const rackDragRef = useRef<{ x: number; y: number; uid: number } | null>(null);
   const [running, setRunning] = useState(false);
   const [collected, setCollected] = useState<Partial<Record<string, ColorCode[]>>>({});
   const [bufLabels, setBufLabels] = useState<Record<string, string>>({});
@@ -140,19 +136,22 @@ export default function GameScreen({
   const [flashNodeId, setFlashNodeId] = useState<string | null>(null);
   const [confetti, setConfetti] = useState<Confetto[]>([]);
   const [ranOnce, setRanOnce] = useState(false);
-  const [coachSkipped, setCoachSkipped] = useState(false);
+  const [tutStep, setTutStep] = useState<number | null>(null);
+  const [tutRect, setTutRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  useEffect(() => {
+    if (isFirst && !localStorage.getItem(TUT_KEY)) setTutStep(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  function endTutorial() {
+    localStorage.setItem(TUT_KEY, '1');
+    setTutStep(null);
+    setTutRect(null);
+  }
   const [dragRails, setDragRails] = useState<number | null>(null);
   const [routeEditId, setRouteEditId] = useState<string | null>(null);
   const [camAngle, setCamAngle] = useState(0);
-  // Machine types in this rack — their one-line behavior notes live
-  // behind the "Machine notes" button, shown only when the player asks.
-  const noteTypes: NodeType[] = [];
-  for (const d of [
-    ...(expert ? expert.tray : level.tray),
-    ...(expert ? Object.values(expert.locked) : []),
-  ]) {
-    if (!noteTypes.includes(d.type)) noteTypes.push(d.type);
-  }
+  // The Guide Book lives behind its rack button, shown only when the
+  // player asks.
   const [noteOpen, setNoteOpen] = useState(false);
 
   function toggleNote() {
@@ -183,6 +182,46 @@ export default function GameScreen({
     angleRef.current = 0;
     setCamAngle(0);
   }, [level.id, expert]);
+
+  // While a rack drag is alive, the carried machine follows the cursor
+  // as a floating image and its rack slot stands empty. The image hands
+  // over to the board's landing ghost only over a real grid cell — the
+  // board SVG spans the whole card, grey surround included, so "inside
+  // the SVG" would swallow the carried machine far too early.
+  useEffect(() => {
+    function onMove(e: PointerEvent) {
+      const start = rackDragRef.current;
+      if (!start) return;
+      if (Math.hypot(e.clientX - start.x, e.clientY - start.y) <= 6) {
+        setCarryPos(null);
+        return;
+      }
+      setDragUid(start.uid);
+      const svg = svgRef.current;
+      let overCell = false;
+      if (svg) {
+        const r = svg.getBoundingClientRect();
+        if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+          overCell =
+            pickCell(((e.clientX - r.left) * 960) / r.width, ((e.clientY - r.top) * 560) / r.height, angleRef.current) !== null;
+        }
+      }
+      setCarryPos(overCell ? null : { x: e.clientX, y: e.clientY });
+    }
+    function onUp() {
+      rackDragRef.current = null;
+      setCarryPos(null);
+      setDragUid(null);
+    }
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, []);
 
   function applyAngle(deg: number) {
     const norm = ((deg % 360) + 360) % 360;
@@ -822,7 +861,7 @@ export default function GameScreen({
     if (splice) setConns(splice);
     sfx.place();
     setSelTray(null);
-    hintSay('Now hold INPUT until the ring fills, let go, then click this machine to lay the belt.');
+    hintSay('Now drag from INPUT to this machine to lay the belt.');
     touchEdit();
   }
 
@@ -876,13 +915,36 @@ export default function GameScreen({
     touchEdit();
   }
 
+  // The rack press selects at once, so a drag that starts on the rack
+  // already carries the machine: the board drops it where the press is
+  // released. The click that ends a plain press is swallowed when the
+  // press already selected (it would toggle the machine straight off);
+  // clicking an already-selected machine still deselects it.
+  const trayPressRef = useRef<number | null>(null);
+  function pressTray(n: PlacedNode, x: number, y: number) {
+    if (running) return;
+    if (selTray === n.uid) {
+      trayPressRef.current = null;
+      return;
+    }
+    trayPressRef.current = n.uid;
+    rackDragRef.current = { x, y, uid: n.uid };
+    setSelTray(n.uid);
+    sfx.select();
+    hintSay('Click an empty cell to place it — or drag it onto the board.');
+  }
+
   function clickTray(n: PlacedNode) {
     if (running) return;
+    if (trayPressRef.current === n.uid) {
+      trayPressRef.current = null;
+      return;
+    }
     const selecting = selTray !== n.uid;
     setSelTray(selecting ? n.uid : null);
     if (selecting) sfx.select();
     else sfx.click();
-    hintSay(selecting ? 'Click an empty cell to place it.' : '');
+    hintSay(selecting ? 'Click an empty cell to place it — or drag it onto the board.' : '');
   }
 
   // ---- SPLIT route editor ----
@@ -931,19 +993,15 @@ export default function GameScreen({
     (c) => c.to !== null && (level.outputs as string[]).includes(c.to),
   );
   const coachDone = [selTray !== null || placedAny, placedAny, hasInConn && hasOutConn, ranOnce];
-  const coachNow = coachDone.indexOf(false);
-  // Visual tutorial layer (Level 1 only): a pulsing ring on the rack and
-  // the RUN button, a marker on the suggested cell, and an animated hand
-  // travelling the next connection the player needs to make. It teaches
-  // controls, never solutions — and only on the first level.
-  const coachActive = isFirst && !coachSkipped && coachNow >= 0;
+  // The tutorial borrows the board's own teaching visuals: a marker on
+  // the suggested cell and a hand travelling the next connection. They
+  // teach controls, never solutions — and only on the first level.
   const firstPlacedId = Object.keys(placed)[0] ?? null;
-  const coachCell =
-    coachActive && coachNow === 1
-      ? (Object.entries(level.solution.placements).find(([, d]) => d.type === 'filter')?.[0] ?? null)
-      : null;
+  const suggestedCell =
+    Object.entries(level.solution.placements).find(([, d]) => d.type === 'filter')?.[0] ?? null;
+  const coachCell = tutStep === 6 ? suggestedCell : null;
   const coachPath =
-    coachActive && coachNow === 2 && firstPlacedId
+    tutStep === 7 && firstPlacedId
       ? !hasInConn
         ? { from: 'IN', to: firstPlacedId }
         : !hasOutConn
@@ -951,11 +1009,160 @@ export default function GameScreen({
           : null
       : null;
 
+  // Tutorial steps 5–8 advance on the player's own actions.
+  useEffect(() => {
+    if (tutStep === 5 && coachDone[0]) setTutStep(6);
+    else if (tutStep === 6 && coachDone[1]) setTutStep(7);
+    else if (tutStep === 7 && coachDone[2]) setTutStep(8);
+    else if (tutStep === 8 && won) setTutStep(9);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tutStep, coachDone, won]);
+
+  // Spotlight rectangle for the current tutorial step, in viewport
+  // coordinates. DOM targets are measured directly; board targets are
+  // converted from SVG space through the board's own bounding box.
+  useEffect(() => {
+    if (tutStep === null) {
+      setTutRect(null);
+      return;
+    }
+    const compute = () => {
+      const pad = 10;
+      const dom = (sel: string) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: r.left - pad, y: r.top - pad, w: r.width + pad * 2, h: r.height + pad * 2 };
+      };
+      const svgBox = (cx: number, cy: number, w: number, h: number) => {
+        const svg = svgRef.current;
+        if (!svg) return null;
+        const r = svg.getBoundingClientRect();
+        const s = Math.min(r.width / 960, r.height / 560);
+        const ox = r.left + (r.width - 960 * s) / 2;
+        const oy = r.top + (r.height - 560 * s) / 2;
+        return { x: ox + (cx - w / 2) * s, y: oy + (cy - h / 2) * s, w: w * s, h: h * s };
+      };
+      // Tight box around a machine's sequence pill (INCOMING / TARGET):
+      // the pill floats above the sprite, its size follows the sequence.
+      const pillBox = (id: string, seqLen: number) => {
+        const c = fpCenterOf(id, placed, camAngle);
+        const rows = Math.max(1, Math.ceil(seqLen / 6));
+        const pillH = rows * 20 - 3 + 22;
+        const pillW = Math.min(seqLen, 6) * 20 - 3 + 16;
+        const pillTop = c.y - 106 - pillH;
+        return svgBox(c.x, pillTop + pillH / 2, pillW + 34, pillH + 30);
+      };
+      let rect: { x: number; y: number; w: number; h: number } | null = null;
+      if (tutStep === 1) {
+        const c = fpCenterOf('IN', placed, camAngle);
+        rect = svgBox(c.x, c.y - 34, 190, 200);
+      } else if (tutStep === 2) {
+        rect = pillBox('IN', level.stream.length);
+      } else if (tutStep === 3) {
+        const c = fpCenterOf(level.outputs[0], placed, camAngle);
+        rect = svgBox(c.x, c.y - 34, 210, 200);
+      } else if (tutStep === 4) {
+        rect = pillBox(level.outputs[0], (level.target[level.outputs[0]] ?? []).length);
+      } else if (tutStep === 5) {
+        rect = dom('[data-tut="rack-filter"]');
+      } else if (tutStep === 6 && suggestedCell) {
+        const c = cellCenter(suggestedCell, camAngle);
+        rect = svgBox(c.x, c.y - 30, 130, 130);
+      } else if (tutStep === 7) {
+        const a = fpCenterOf('IN', placed, camAngle);
+        const b = fpCenterOf(level.outputs[0], placed, camAngle);
+        const mid = firstPlacedId ? fpCenterOf(firstPlacedId, placed, camAngle) : a;
+        const minX = Math.min(a.x, b.x, mid.x) - 95;
+        const maxX = Math.max(a.x, b.x, mid.x) + 95;
+        const minY = Math.min(a.y, b.y, mid.y) - 130;
+        const maxY = Math.max(a.y, b.y, mid.y) + 45;
+        rect = svgBox((minX + maxX) / 2, (minY + maxY) / 2, maxX - minX, maxY - minY);
+      } else if (tutStep === 8) {
+        // While the system runs, the light belongs on the board itself.
+        rect = running ? svgBox(480, 280, 984, 584) : dom('[data-tut="run"]');
+      } else if (tutStep === 9) {
+        rect = dom('[data-tut="guide"]');
+      }
+      setTutRect(rect);
+    };
+    compute();
+    const iv = window.setInterval(compute, 200);
+    window.addEventListener('resize', compute);
+    return () => {
+      window.clearInterval(iv);
+      window.removeEventListener('resize', compute);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tutStep, camAngle, running]);
+
   return (
     <div className="game-card">
       <img className="game-backdrop" src={CHAPTER_BG[effLevel.chapter]} alt="" />
       <DustOverlay />
+      {carryPos && selNode && (
+        <img
+          className="carry-img"
+          src={nodeImg(effLevel.chapter, selNode.type)}
+          alt=""
+          style={{ left: carryPos.x, top: carryPos.y }}
+        />
+      )}
       <div className="vignette-overlay" />
+      {tutStep !== null && (
+        <div className="tut-root">
+          {tutRect ? (
+            <div
+              className="tut-hole"
+              style={{ left: tutRect.x, top: tutRect.y, width: tutRect.w, height: tutRect.h }}
+            />
+          ) : (
+            <div className="tut-full" />
+          )}
+          {(tutStep <= 4 || tutStep === 9) && <div className="tut-blocker" />}
+          <div className="tut-stage">
+            <div className="tut-bubble">
+              <div className="tut-name">PIO — YOUR FOREMAN</div>
+              <p>{tutStep === 8 && running ? TUT_RUNNING_TEXT : TUT_TEXT[tutStep]}</p>
+              <div className="tut-actions">
+                {tutStep <= 4 && (
+                  <button
+                    className="tut-next"
+                    onClick={() => {
+                      sfx.click();
+                      setTutStep(tutStep + 1);
+                    }}
+                  >
+                    Next ▶
+                  </button>
+                )}
+                {tutStep === 9 && (
+                  <button
+                    className="tut-next"
+                    onClick={() => {
+                      sfx.click();
+                      endTutorial();
+                    }}
+                  >
+                    Got it!
+                  </button>
+                )}
+                {tutStep >= 5 && tutStep <= 8 && !(tutStep === 8 && running) && (
+                  <span className="tut-do">Do it — I'm watching!</span>
+                )}
+                <button className="tut-skip" onClick={endTutorial}>
+                  Skip tutorial
+                </button>
+              </div>
+            </div>
+            <img
+              className="tut-pio"
+              src={tutStep === 0 ? HOST_POSES.wave : tutStep === 9 ? HOST_POSES.cheer : HOST_POSES.point}
+              alt=""
+            />
+          </div>
+        </div>
+      )}
       <div className="topbar">
         <button
           className="ghost"
@@ -1000,17 +1207,6 @@ export default function GameScreen({
       <div className="brief">
         <h2>{lang === 'id' ? level.nameId : level.name}</h2>
         <p dangerouslySetInnerHTML={{ __html: lang === 'en' ? level.brief : level.briefId }} />
-        <div className="stream">
-          <span>
-            <b>Incoming flow:</b>
-          </span>
-          <span>
-            {level.stream.map((c, i) => (
-              <img key={i} className="tok-mini" src={tokenImg(effLevel.chapter, c)} alt={COLOR_NAME[c]} />
-            ))}
-          </span>
-          <span style={{ marginLeft: 10 }} dangerouslySetInnerHTML={{ __html: goalTextFor(level, lang) }} />
-        </div>
         <button
           className="ghost translate-btn"
           onClick={() => {
@@ -1020,42 +1216,10 @@ export default function GameScreen({
         >
           {lang === 'en' ? 'Translate to Indonesian' : 'Show English'}
         </button>
-        {isFirst && (
-          <div className="coach">
-            {COACH_STEPS.map((s, i) => (
-              <span key={s} className={'step' + (coachDone[i] ? ' done' : i === coachNow ? ' now' : '')}>
-                {coachDone[i] ? '✓ ' : ''}
-                {s}
-              </span>
-            ))}
-            {coachActive && (
-              <button className="coach-skip" onClick={() => setCoachSkipped(true)}>
-                Skip tutorial ✕
-              </button>
-            )}
-          </div>
-        )}
       </div>
 
       <div className="sandbox-card">
-        {noteOpen && noteTypes.length > 0 && (
-          <div className="machine-note">
-            <div className="machine-note-head">GUIDE BOOK — WATCH THEM WORK</div>
-            {noteTypes.map((t) => (
-              <div className="machine-note-row demo" key={t}>
-                <div className="machine-note-title">
-                  <img src={nodeImg(effLevel.chapter, t)} alt="" />
-                  <b>{nodeLabel({ type: t }).title}</b>
-                </div>
-                <MachineDemo type={t} chapter={effLevel.chapter} />
-                <span>{MACHINE_NOTE[t]}</span>
-              </div>
-            ))}
-            <button className="machine-note-btn" onClick={toggleNote}>
-              Close
-            </button>
-          </div>
-        )}
+        {noteOpen && <GuideBook chapter={effLevel.chapter} onClose={toggleNote} />}
         <div className="rack-row">
           <span className="tray-label">
             {expert
@@ -1072,11 +1236,14 @@ export default function GameScreen({
                   className={
                     'tray-item' +
                     (selTray === n.uid ? ' selected' : '') +
-                    (coachActive && coachNow === 0 && n.type === 'filter' && n.color === 'R' ? ' coach-ring' : '')
+                    (dragUid === n.uid ? ' picked' : '') +
+                    (tutStep === 5 && n.type === 'filter' && n.color === 'R' ? ' coach-ring' : '')
                   }
                   onClick={() => clickTray(n)}
+                  onPointerDown={(e) => pressTray(n, e.clientX, e.clientY)}
+                  data-tut={n.type === 'filter' && n.color === 'R' ? 'rack-filter' : undefined}
                 >
-                  <img src={nodeImg(effLevel.chapter, n.type)} alt={lb.title} />
+                  <img src={nodeImg(effLevel.chapter, n.type)} alt={lb.title} draggable={false} />
                   <span>
                     {lb.title}
                     {expert && left > 1 && <span className="count">×{left}</span>}
@@ -1090,7 +1257,18 @@ export default function GameScreen({
               <span style={{ color: 'var(--ink-soft)', fontSize: 13 }}>(rack empty)</span>
             )}
           </span>
-          <button className="ghost note-toggle" onClick={toggleNote}>
+          {isFirst && (
+            <button
+              className="ghost note-toggle"
+              onClick={() => {
+                sfx.click();
+                setTutStep(0);
+              }}
+            >
+              Tutorial
+            </button>
+          )}
+          <button className="ghost note-toggle" data-tut="guide" onClick={toggleNote}>
             {noteOpen ? 'Hide guide' : 'Guide book'}
           </button>
         </div>
@@ -1106,11 +1284,11 @@ export default function GameScreen({
               <rect x="7.4" y="3" width="2.6" height="18" rx="1" />
               <rect x="14" y="3" width="2.6" height="18" rx="1" />
             </svg>
-            Rails: {railsNow} / {effLevel.railLimit}
+            Belts: {railsNow} / {effLevel.railLimit}
           </span>
           {expert && (
             <span className="expert-note">
-              EXPERT — fewer rails · limited rack · blocked cells · locked machines
+              EXPERT — fewer belts · limited rack · blocked cells · locked machines
             </span>
           )}
           <span className="cam-controls">
@@ -1125,6 +1303,7 @@ export default function GameScreen({
         </div>
 
         <div className="board-wrap">
+          <div className="rotate-hint">Turn your phone sideways — the board gets much bigger.</div>
           <Board
             level={effLevel}
             placed={placed}
@@ -1155,6 +1334,25 @@ export default function GameScreen({
             coachCell={coachCell}
             coachPath={coachPath}
           />
+          <div className="board-actions">
+            <button
+              className={'run' + (tutStep === 8 ? ' coach-ring' : '')}
+              data-tut="run"
+              onClick={doRun}
+              disabled={running}
+            >
+              ▶ RUN
+            </button>
+            <button
+              className="ghost"
+              onClick={() => {
+                sfx.click();
+                resetAll();
+              }}
+            >
+              Reset Level
+            </button>
+          </div>
           {confetti.map((c, i) => (
             <span
               key={i}
@@ -1223,23 +1421,8 @@ export default function GameScreen({
         </div>
       </div>
 
+      {won && (
       <div className="controls">
-        <button
-          className={'run' + (coachActive && coachNow === 3 ? ' coach-ring' : '')}
-          onClick={doRun}
-          disabled={running}
-        >
-          ▶ RUN
-        </button>
-        <button
-          className="ghost"
-          onClick={() => {
-            sfx.click();
-            resetAll();
-          }}
-        >
-          Reset Level
-        </button>
         {won && nextLabel && (
           <button
             className="ghost"
@@ -1257,6 +1440,7 @@ export default function GameScreen({
           </button>
         )}
       </div>
+      )}
 
       <div className="collected">
         {level.outputs.map((o) => (

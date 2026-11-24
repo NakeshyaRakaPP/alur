@@ -205,7 +205,7 @@ header img.logo {
   border: 3px solid var(--line);
   box-shadow: var(--shadow);
   margin-top: 14px;
-  padding: 14px 16px 16px;
+  padding: 10px 16px 12px;
 }
 /* The chapter world's painting, faint behind the game card. */
 .game-backdrop {
@@ -369,7 +369,8 @@ button.ghost.translate-btn {
   background: none;
   border: none;
   padding: 4px 8px;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
   font-size: 12px;
   font-weight: 700;
   color: var(--ink);
@@ -489,6 +490,33 @@ button.cam-btn:disabled {
   padding-top: 14px;
   border-top: 2px solid #2b2f36;
   flex-wrap: wrap;
+}
+.board-actions {
+  position: absolute;
+  right: 18px;
+  top: 10%;
+  width: 170px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 6;
+}
+.board-actions button {
+  width: 100%;
+}
+.board-actions .ghost {
+  text-align: center;
+}
+@media (max-width: 640px) {
+  .board-actions {
+    top: auto;
+    bottom: 10px;
+    right: 10px;
+  }
+  .board-actions button.run {
+    padding: 10px 22px;
+    font-size: 13px;
+  }
 }
 button.run {
   background: var(--accent);
@@ -632,6 +660,37 @@ button.ghost:hover {
   paint-order: stroke;
   stroke: #14161a;
   stroke-width: 2.5px;
+}
+.tray-item.picked {
+  opacity: 0;
+}
+.carry-img {
+  position: fixed;
+  width: 72px;
+  height: 72px;
+  transform: translate(-50%, -72%);
+  pointer-events: none;
+  z-index: 60;
+  opacity: 0.95;
+  filter: drop-shadow(3px 4px 0 rgba(0, 0, 0, 0.45));
+}
+.target-pill > rect {
+  fill: rgba(18, 20, 25, 0.88);
+  stroke: var(--line);
+  stroke-width: 1.5;
+}
+.target-pill-label {
+  fill: var(--ink-soft);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-anchor: middle;
+}
+.target-pack {
+  fill: none;
+  stroke: var(--gold);
+  stroke-width: 1.2;
+  opacity: 0.85;
 }
 .buf-label {
   fill: var(--accent-hi);
@@ -1197,16 +1256,44 @@ button.ghost:hover {
 }
 
 /* ---------- Small screens: one card, tighter frame ---------- */
+.rotate-hint {
+  display: none;
+}
+@media (max-width: 700px) and (orientation: portrait) {
+  .rotate-hint {
+    display: block;
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 5;
+    background: rgba(20, 22, 28, 0.9);
+    border: 2px solid var(--accent);
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 700;
+    padding: 6px 12px;
+    white-space: nowrap;
+    pointer-events: none;
+    animation: rotate-hint-life 1s ease 6.5s forwards;
+  }
+}
+@keyframes rotate-hint-life {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
 @media (max-width: 640px) {
   body {
-    padding: 12px 8px 24px;
+    padding: 10px 6px 20px;
   }
   header img.logo {
     height: 64px;
   }
   .game-card {
     margin-top: 10px;
-    padding: 10px 10px 12px;
+    padding: 8px 8px 10px;
   }
   .brief {
     margin-top: 10px;
@@ -1320,7 +1407,7 @@ button.menu-btn {
   background: var(--card);
   border: 3px solid var(--line);
   box-shadow: var(--shadow);
-  padding: 16px 18px 14px;
+  padding: 2px 18px 14px;
   width: min(440px, 94vw);
   max-height: 86vh;
   overflow: auto;
@@ -1330,7 +1417,13 @@ button.menu-btn {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
+  position: sticky;
+  top: 0;
+  background: var(--card);
+  padding-top: 14px;
+  padding-bottom: 8px;
+  z-index: 3;
 }
 .menu-panel-head b {
   color: var(--accent-hi);
@@ -1466,6 +1559,29 @@ button.ghost.menu-small.danger {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 1.4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  position: sticky;
+  top: -11px;
+  background: var(--card);
+  padding: 8px 0 5px;
+  margin-top: -8px;
+  z-index: 2;
+}
+.machine-note-x {
+  background: none;
+  border: 2px solid var(--line);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 8px;
+  cursor: pointer;
+  flex: none;
+}
+.machine-note-x:hover {
+  border-color: var(--accent);
 }
 .machine-note-row {
   display: flex;
@@ -1733,7 +1849,7 @@ button.ghost.menu-small.danger {
 .coach-hand-poly {
   fill: #fff;
   stroke: #1d1305;
-  stroke-width: 1.6;
+  stroke-width: 2.2;
   stroke-linejoin: round;
 }
 .coach-tip {
@@ -1779,5 +1895,332 @@ button.ghost.menu-small.danger {
   }
   .menu-logo {
     height: 118px;
+  }
+}
+
+/* ---- Guide Book: an open book. Left page explains, right page shows
+   the machine working on a live test strip. Pages turn; nothing
+   scrolls. ---- */
+.book-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 6, 8, 0.74);
+  display: grid;
+  place-items: center;
+  z-index: 300;
+  padding: 16px;
+}
+.book {
+  position: relative;
+  display: flex;
+  width: min(940px, 97vw);
+  perspective: 1500px;
+  filter: drop-shadow(0 24px 44px rgba(0, 0, 0, 0.55));
+}
+.book-page {
+  flex: 1 1 0;
+  min-width: 0;
+  background: linear-gradient(105deg, #f6edd6 0%, #efe2c2 78%, #e6d5ab 100%);
+  color: #2b2118;
+  padding: 24px 26px;
+  min-height: 452px;
+  display: flex;
+  flex-direction: column;
+}
+.book-page.left {
+  border-radius: 14px 5px 5px 14px;
+  background: linear-gradient(255deg, #f6edd6 0%, #efe2c2 78%, #e2d0a4 100%);
+}
+.book-page.right {
+  border-radius: 5px 14px 14px 5px;
+}
+.book-spine {
+  flex: 0 0 22px;
+  background: linear-gradient(90deg, rgba(120, 92, 46, 0.35), rgba(120, 92, 46, 0.06) 30%, rgba(120, 92, 46, 0.06) 70%, rgba(120, 92, 46, 0.35));
+}
+.book-x {
+  position: absolute;
+  top: -13px;
+  right: -13px;
+  z-index: 6;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid #0c0d10;
+  background: #f5a623;
+  color: #231303;
+  font-weight: 800;
+  cursor: pointer;
+}
+.book-kicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  color: #97783d;
+}
+.book-sprite {
+  width: 108px;
+  height: 108px;
+  object-fit: contain;
+  margin-top: 10px;
+}
+.book-title {
+  font-size: 27px;
+  margin: 6px 0 8px;
+  letter-spacing: 1px;
+}
+.book-note {
+  font-size: 15px;
+  line-height: 1.5;
+  margin: 0 0 12px;
+}
+.book-points {
+  margin: 0;
+  padding-left: 19px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: #4a3a24;
+}
+.book-points li {
+  margin-bottom: 6px;
+}
+.book-foot {
+  margin-top: auto;
+  padding-top: 14px;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  color: #97783d;
+  font-weight: 700;
+}
+.demo-stage {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.demo-back {
+  fill: #12151a;
+}
+.demo-floor {
+  fill: #20242b;
+  stroke: #31363f;
+  stroke-width: 1;
+}
+.demo-count {
+  font-size: 12px;
+  font-weight: 800;
+  fill: #231303;
+  text-anchor: middle;
+}
+.book-caption {
+  text-align: center;
+  font-size: 12.5px;
+  color: #77592c;
+  margin: 10px 0 0;
+}
+.book-nav {
+  display: flex;
+  justify-content: space-between;
+  margin-top: auto;
+  padding-top: 14px;
+}
+.book-nav-btn {
+  background: #2b2118;
+  color: #f6edd6;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.book-nav-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.book-sheet {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: calc(50% - 11px);
+  background: linear-gradient(105deg, #f6edd6, #e9dbb6);
+  border-radius: 5px 14px 14px 5px;
+  transform-origin: left center;
+  display: grid;
+  place-items: center;
+  z-index: 4;
+}
+.book-sheet img {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  opacity: 0.85;
+}
+.book-sheet.next {
+  animation: sheet-next 0.5s ease forwards;
+}
+.book-sheet.prev {
+  left: 11px;
+  transform-origin: right center;
+  border-radius: 14px 5px 5px 14px;
+  animation: sheet-prev 0.5s ease forwards;
+}
+@keyframes sheet-next {
+  from { transform: rotateY(0deg); }
+  to { transform: rotateY(-180deg); }
+}
+@keyframes sheet-prev {
+  from { transform: rotateY(0deg); }
+  to { transform: rotateY(180deg); }
+}
+/* ---- Tutorial: Pio greets the player; everything but the thing he
+   is explaining goes dark. ---- */
+.tut-root {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  pointer-events: none;
+}
+.tut-full {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 5, 8, 0.66);
+}
+.tut-hole {
+  position: fixed;
+  border-radius: 14px;
+  box-shadow:
+    0 0 0 9999px rgba(4, 5, 8, 0.66),
+    0 0 0 3px #f5a623,
+    0 0 34px 8px rgba(245, 166, 35, 0.45);
+  transition: left 0.25s ease, top 0.25s ease, width 0.25s ease, height 0.25s ease;
+}
+.tut-blocker {
+  position: fixed;
+  inset: 0;
+  pointer-events: auto;
+}
+.tut-stage {
+  position: fixed;
+  right: 4px;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  pointer-events: none;
+}
+.tut-pio {
+  height: min(46vh, 410px);
+  width: auto;
+  align-self: flex-end;
+  filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.5));
+  animation: pio-bob 2.6s ease-in-out infinite;
+}
+@keyframes pio-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+.tut-bubble {
+  position: relative;
+  align-self: flex-end;
+  margin-bottom: 104px;
+  width: min(430px, 52vw);
+  background: #171a20;
+  border: 2px solid #333842;
+  border-radius: 16px;
+  padding: 14px 18px;
+  pointer-events: auto;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+}
+.tut-bubble::after {
+  content: '';
+  position: absolute;
+  right: -11px;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  background: #171a20;
+  border-right: 2px solid #333842;
+  border-top: 2px solid #333842;
+  transform: translateY(-50%) rotate(45deg);
+}
+.tut-name {
+  color: var(--accent);
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 1.8px;
+}
+.tut-bubble p {
+  margin: 5px 0 10px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.tut-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tut-next {
+  background: var(--accent);
+  color: #231303;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  border: 3px solid #0c0d10;
+  border-radius: 8px;
+  padding: 8px 20px;
+  font-size: 13.5px;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 3px 0 #0c0d10;
+}
+.tut-do {
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 13.5px;
+}
+.tut-skip {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: 12.5px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+@media (max-width: 640px) {
+  .tut-pio {
+    height: 190px;
+  }
+  .tut-bubble {
+    margin-bottom: 48px;
+    padding: 10px 13px;
+  }
+  .tut-bubble p {
+    font-size: 13.5px;
+  }
+}
+
+@media (max-width: 700px) {
+  .book {
+    flex-direction: column;
+  }
+  .book-page {
+    min-height: 0;
+    padding: 18px;
+  }
+  .book-page.right {
+    order: -1;
+    border-radius: 14px 14px 5px 5px;
+  }
+  .book-page.left {
+    border-radius: 5px 5px 14px 14px;
+  }
+  .book-spine {
+    flex-basis: 14px;
+  }
+  .book-sheet {
+    display: none;
   }
 }
