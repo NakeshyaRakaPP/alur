@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import GameScreen from './components/GameScreen';
 import type { GameMode } from './components/GameScreen';
 import HomeScreen from './components/HomeScreen';
@@ -60,20 +60,69 @@ function LoadingScreen({ pct }: { pct: number }) {
   );
 }
 
-/** Portrait phones get a full-screen "turn your phone" gate (landscape
- *  looks just like the PC version). Pure CSS decides when it shows;
- *  the button lets a determined portrait player through anyway. */
-function RotateGate() {
-  const [dismissed, setDismissed] = useState(false);
-  if (dismissed) return null;
+/** The landscape-game standard on the web: from a player's tap, enter
+ *  fullscreen and ask the OS to lock the screen to landscape. Works on
+ *  Chrome/Android and Firefox; Safari has neither API on iPhone, where
+ *  the PortraitToast below is the sanctioned fallback. Every failure is
+ *  silent — desktop and unsupported browsers just carry on. */
+function tryLockLandscape() {
+  try {
+    if (!window.matchMedia('(pointer: coarse)').matches) return;
+    const ori = screen.orientation as ScreenOrientation & {
+      lock?: (o: string) => Promise<void>;
+    };
+    if (!ori.lock) return;
+    if (document.fullscreenElement) {
+      ori.lock('landscape').catch(() => {});
+      return;
+    }
+    const p = document.documentElement.requestFullscreen?.();
+    if (p) p.then(() => ori.lock!('landscape')).catch(() => {});
+  } catch {
+    /* no lock available — the toast + responsive layout carry it */
+  }
+}
+
+/** While a phone is held in portrait, this toast flashes "Turn your
+ *  phone sideways" for a few seconds, at most 3 times per visit, and
+ *  never blocks a tap. It is the fallback for browsers that cannot
+ *  lock orientation (notably Safari on iPhone). */
+function PortraitToast() {
+  const [visible, setVisible] = useState(false);
+  const showsRef = useRef(0);
+  const visibleRef = useRef(false);
+  useEffect(() => {
+    let timer: number | undefined;
+    const check = () => {
+      const portraitPhone = window.innerWidth <= 760 && window.innerHeight > window.innerWidth;
+      if (portraitPhone && !visibleRef.current && showsRef.current < 3) {
+        showsRef.current += 1;
+        visibleRef.current = true;
+        setVisible(true);
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => {
+          visibleRef.current = false;
+          setVisible(false);
+        }, 2800);
+      } else if (!portraitPhone) {
+        visibleRef.current = false;
+        setVisible(false);
+      }
+    };
+    check();
+    window.addEventListener('resize', check);
+    window.addEventListener('orientationchange', check);
+    return () => {
+      window.removeEventListener('resize', check);
+      window.removeEventListener('orientationchange', check);
+      window.clearTimeout(timer);
+    };
+  }, []);
+  if (!visible) return null;
   return (
-    <div className="rotate-gate">
+    <div className="portrait-toast">
       <div className="rotate-phone" />
-      <h2>Turn your phone sideways</h2>
-      <p>ALUR plays best in landscape — the whole board, just like on PC.</p>
-      <button className="rotate-anyway" onClick={() => setDismissed(true)}>
-        Play in portrait anyway
-      </button>
+      <div className="portrait-toast-text">Turn your phone sideways</div>
     </div>
   );
 }
@@ -206,7 +255,7 @@ export default function App() {
     return (
       <>
         <LoadingScreen pct={bootPct} />
-        <RotateGate />
+        <PortraitToast />
       </>
     );
   }
@@ -264,7 +313,10 @@ export default function App() {
           demo={DEMO}
           muted={soundMuted}
           musicMuted={musicOff}
-          onPlay={() => setScreen({ kind: 'home' })}
+          onPlay={() => {
+            tryLockLandscape();
+            setScreen({ kind: 'home' });
+          }}
           onToggleMute={toggleMute}
           onToggleMusic={toggleMusic}
           onResetProgress={resetProgress}
@@ -281,6 +333,7 @@ export default function App() {
             setScreen({ kind: 'menu' });
           }}
           onPlay={(id, mode) => {
+            tryLockLandscape();
             sfx.select();
             setScreen({ kind: 'game', levelId: id, mode });
           }}
@@ -315,7 +368,7 @@ export default function App() {
         </footer>
       )}
     </div>
-    <RotateGate />
+    <PortraitToast />
     </>
   );
 }

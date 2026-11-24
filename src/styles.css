@@ -1305,24 +1305,34 @@ button.ghost:hover {
   font-weight: 700;
 }
 
-/* ---------- Portrait rotate gate (phones) ---------- */
-.rotate-gate {
-  display: none;
+/* ---------- Mobile game hygiene (all screens) ---------- */
+html,
+body {
+  overscroll-behavior: none;
 }
-@media (orientation: portrait) and (max-width: 760px) {
-  .rotate-gate {
-    display: flex;
-    position: fixed;
-    inset: 0;
-    z-index: 600;
-    background: rgba(5, 6, 9, 0.97);
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 14px;
-    text-align: center;
-    padding: 28px;
-  }
+/* The readable nudge, screen-aligned above the rotated game. */
+.portrait-toast {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 700;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  background: rgba(16, 18, 23, 0.94);
+  border: 2px solid #333842;
+  border-radius: 18px;
+  padding: 26px 34px;
+  pointer-events: none;
+  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.6);
+}
+.portrait-toast-text {
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 .rotate-phone {
   width: 52px;
@@ -1347,31 +1357,96 @@ button.ghost:hover {
   0%, 30% { transform: rotate(0deg); }
   65%, 100% { transform: rotate(90deg); }
 }
-.rotate-gate h2 {
-  color: var(--ink);
-  font-size: 22px;
-  margin: 8px 0 0;
+
+/* ---------- Landscape phones: short screen (~390px tall) ----------
+   Compact chrome so the board gets the height. Desktop untouched. */
+@media (orientation: landscape) and (max-height: 500px) {
+  body {
+    padding: 8px max(8px, env(safe-area-inset-right)) 14px max(8px, env(safe-area-inset-left));
+  }
+  header {
+    margin-bottom: 6px;
+  }
+  header .logo {
+    height: 26px;
+  }
+  header .tag {
+    display: none;
+  }
+  .game-card {
+    padding: 10px 12px 12px;
+  }
+  .tut-pio {
+    height: 200px;
+  }
+  .tut-bubble {
+    margin-bottom: 44px;
+  }
 }
-.rotate-gate p {
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.5;
-  margin: 0;
-  max-width: 300px;
+
+/* ---------- Landscape phones: side-rail layout ----------
+   The landscape-game rule: the board is sized by the screen's short
+   side and takes nearly the full height; the HUD moves into a rail
+   on the right instead of stacking above and below the board. */
+@media (orientation: landscape) and (max-width: 960px) and (max-height: 500px) {
+  .game-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 252px;
+    grid-template-areas:
+      'top top'
+      'board brief'
+      'board rack'
+      'board collected'
+      'board controls'
+      'board result';
+    column-gap: 14px;
+    row-gap: 8px;
+    align-items: start;
+  }
+  .game-card .topbar {
+    grid-area: top;
+  }
+  .game-card .board-wrap {
+    grid-area: board;
+    justify-self: center;
+    width: min(100%, calc((100dvh - 110px) * 1.7143));
+  }
+  .game-card .brief {
+    grid-area: brief;
+  }
+  .game-card .brief h2 {
+    font-size: 16px;
+  }
+  .game-card .brief p {
+    font-size: 12.5px;
+    line-height: 1.45;
+  }
+  .game-card .rack-row {
+    grid-area: rack;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .game-card .rack-items {
+    gap: 6px;
+  }
+  .game-card .collected {
+    grid-area: collected;
+    font-size: 12px;
+  }
+  .game-card .controls {
+    grid-area: controls;
+    margin-top: 0;
+    padding-top: 8px;
+  }
+  .game-card .result {
+    grid-area: result;
+    font-size: 13px;
+  }
 }
-.rotate-anyway {
-  margin-top: 10px;
-  background: none;
-  border: none;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 700;
-  text-decoration: underline;
-  cursor: pointer;
-}
+
 @media (max-width: 640px) {
   body {
-    padding: 10px 6px 20px;
+    padding: 10px max(6px, env(safe-area-inset-right)) 20px max(6px, env(safe-area-inset-left));
   }
   header img.logo {
     height: 64px;
@@ -2188,7 +2263,7 @@ button.ghost.menu-small.danger {
 }
 .tut-stage {
   position: fixed;
-  right: 4px;
+  right: max(4px, env(safe-area-inset-right));
   bottom: 0;
   display: flex;
   align-items: flex-end;
