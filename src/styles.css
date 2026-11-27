@@ -576,6 +576,52 @@ button.ghost:hover {
   border-color: #8a4a3f;
   animation: slideUp 0.25s steps(4) both;
 }
+.trace-panel {
+  margin-top: 10px;
+  border: 2px solid #2b2f36;
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.trace-panel summary {
+  cursor: pointer;
+  padding: 9px 12px;
+  color: var(--ink);
+  font-weight: 800;
+  letter-spacing: 0.4px;
+}
+.trace-body {
+  padding: 0 12px 11px;
+}
+.trace-steps {
+  max-height: 180px;
+  overflow-y: auto;
+  margin: 2px 0 9px;
+  padding-left: 20px;
+}
+.trace-analysis {
+  margin: 0 0 7px;
+  padding-left: 18px;
+}
+.trace-suggestion {
+  margin: 0;
+  color: var(--ink);
+}
+@media (max-width: 640px) {
+  .trace-panel {
+    font-size: 12px;
+  }
+  .trace-panel summary {
+    padding: 8px 10px;
+  }
+  .trace-body {
+    padding: 0 10px 10px;
+  }
+  .trace-steps {
+    max-height: 150px;
+  }
+}
 @keyframes slideUp {
   from {
     opacity: 0;
@@ -2382,5 +2428,13 @@ button.ghost.menu-small.danger {
   }
   .book-sheet {
     display: none;
+  }
+  .book-nav {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .book-nav-btn {
+    padding: 8px 12px;
+    font-size: 12.5px;
   }
 }

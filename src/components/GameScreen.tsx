@@ -5,7 +5,9 @@ import DustOverlay from './DustOverlay';
 import GuideBook from './GuideBook';
 import { preloadAssemblies } from '../assembly';
 import { computeMetrics, isBetter, simulate, starsFor, starsForExpert } from '../engine';
-import type { Emit, Verdict } from '../engine';
+import type { Emit, SimEvent, Verdict } from '../engine';
+import { buildTrace } from '../trace';
+import type { TraceSummary } from '../trace';
 import { sfx } from '../audio/sfx';
 import { anchorOf, camBasis, cellCenter, connPoints, fpCenterOf, pickCell, portPos, railsUsed, screenToGridFloat } from '../geometry';
 import { CHAPTER_BG, COLOR_HEX, COLOR_NAME, COLOR_NAME_ID, BELT_IMG, HOST_POSES, MACHINE_NOTE, nodeImg, tokenImg, nodeKey, nodeLabel, nodeName, splitRoutingOf, exclusiveSplitRouting } from '../nodeMeta';
@@ -37,8 +39,8 @@ function sleep(ms: number): Promise<void> {
 }
 
 type ResultState =
-  | { win: true; metrics: Metrics; stars: number; rails: number; par: number; refRails: number; isNewBest: boolean; prevBest: Metrics | null; leakText?: string }
-  | { win: false; verdict: Verdict; placed: Record<string, NodeDef> };
+  | { win: true; metrics: Metrics; stars: number; rails: number; par: number; refRails: number; isNewBest: boolean; prevBest: Metrics | null; leakText?: string; trace: TraceSummary }
+  | { win: false; verdict: Verdict; placed: Record<string, NodeDef>; trace: TraceSummary };
 
 type Lang = 'en' | 'id';
 
@@ -721,8 +723,12 @@ export default function GameScreen({
     arrivalsRef.current = {};
     clearTokens();
     const defs = placedDefs();
+    const traceEvents: SimEvent[] = [];
     const res = await simulate(effLevel, defs, conns, {
-      emit,
+      emit: async (e) => {
+        traceEvents.push(e);
+        await emit(e);
+      },
       isCancelled: () => runIdRef.current !== myRun,
     });
     if (runIdRef.current !== myRun || res.aborted) return;
@@ -753,6 +759,7 @@ export default function GameScreen({
         isNewBest: isBetter(metrics, best),
         prevBest: best,
         leakText,
+        trace: buildTrace(effLevel, defs, res.verdict, traceEvents),
       });
       setWon(true);
       setShowStamp(true);
@@ -769,7 +776,7 @@ export default function GameScreen({
       onWin(level, stars, metrics, mode);
     } else {
       sfx.error();
-      setResult({ win: false, verdict: res.verdict, placed: defs });
+      setResult({ win: false, verdict: res.verdict, placed: defs, trace: buildTrace(effLevel, defs, res.verdict, traceEvents) });
       const v = res.verdict;
       if (v.kind === 'stuck' && defs[v.at]) flashNode(v.at);
       else if (v.kind === 'leftover') flashNode(v.nodeId);
@@ -1219,7 +1226,7 @@ export default function GameScreen({
       </div>
 
       <div className="sandbox-card">
-        {noteOpen && <GuideBook chapter={effLevel.chapter} onClose={toggleNote} />}
+        {noteOpen && <GuideBook chapter={effLevel.chapter} lang={lang} onLangChange={setLang} onClose={toggleNote} />}
         <div className="rack-row">
           <span className="tray-label">
             {expert
@@ -1457,8 +1464,31 @@ export default function GameScreen({
       </div>
 
       {result && (result.win ? renderWin(result, effLevel, lang) : renderFail(result))}
+      {result && <TracePanel trace={result.trace} lang={lang} />}
 
     </div>
+  );
+}
+
+function TracePanel({ trace, lang }: { trace: TraceSummary; lang: Lang }): ReactNode {
+  const analysis = lang === 'id' ? trace.analysisId : trace.analysisEn;
+  return (
+    <details className="trace-panel">
+      <summary>{lang === 'id' ? 'Jejak sistem — rantai maju' : 'System trace — forward chain'}</summary>
+      <div className="trace-body">
+        <ol className="trace-steps">
+          {trace.steps.map((s, i) => (
+            <li key={i}>{lang === 'id' ? s.id : s.en}</li>
+          ))}
+        </ol>
+        <ul className="trace-analysis">
+          {analysis.map((line, i) => (
+            <li key={i}>{line}</li>
+          ))}
+        </ul>
+        <p className="trace-suggestion">{lang === 'id' ? trace.suggestionId : trace.suggestionEn}</p>
+      </div>
+    </details>
   );
 }
 

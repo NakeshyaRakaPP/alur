@@ -377,7 +377,7 @@ function DemoStage({ type, chapter }: { type: NodeType; chapter: number }) {
 
 /* ------------------------------------------------------------------ */
 
-const PAGE_ORDER: NodeType[] = ['filter', 'transform', 'split', 'tahan', 'sort', 'merge'];
+const PAGE_ORDER: (NodeType | 'chain')[] = ['filter', 'transform', 'split', 'tahan', 'sort', 'merge', 'chain'];
 
 const PAGE_TITLES: Record<NodeType, string> = {
   filter: 'FILTER',
@@ -421,9 +421,87 @@ const PAGE_POINTS: Record<NodeType, string[]> = {
   ],
 };
 
-export default function GuideBook({ chapter, onClose }: { chapter: number; onClose: () => void }) {
+const MACHINE_NOTE_ID: Record<NodeType, string> = {
+  filter: 'Meloloskan satu warna. Warna lain dibuang.',
+  transform: 'Mengubah setiap token menjadi warna baru.',
+  split: 'Setiap warna keluar lewat ujungnya sendiri. Gunakan Route untuk menukar ujung.',
+  tahan: 'Menahan token, lalu mengirimnya keluar dalam paket.',
+  sort: 'Menahan token, lalu melepasnya per warna sesuai urutannya.',
+  merge: 'Mengambil satu token dari setiap belt masuk, lalu menggabungkannya menjadi warna baru.',
+};
+
+const PAGE_POINTS_ID: Record<NodeType, string[]> = {
+  filter: [
+    'Mempertahankan satu warna yang ditunjukkan labelnya.',
+    'Warna lain dihancurkan begitu masuk.',
+    'Tidak ada yang menunggu di dalam — token langsung keluar, atau tidak sama sekali.',
+  ],
+  transform: [
+    'Setiap token yang masuk keluar sebagai warna pada labelnya.',
+    'Warna lama hilang — tidak bisa kembali.',
+    'Token lewat satu per satu; tidak ada yang ditahan.',
+  ],
+  split: [
+    'Tiga ujung: atas, bawah, dan samping.',
+    'Setiap warna keluar lewat ujungnya sendiri — atur dengan Route.',
+    'Warna yang ujungnya tidak punya belt akan tertahan di dalam.',
+  ],
+  tahan: [
+    'Token menunggu di dalam sampai paketnya penuh.',
+    'Lalu seluruh paket keluar bersama, berurutan.',
+    'Angka pada mesin menunjukkan seberapa penuh isinya.',
+  ],
+  sort: [
+    'Token menunggu di dalam selagi menumpuk.',
+    'Lalu keluar berkelompok: semua satu warna, kemudian warna berikutnya.',
+    'Urutan warnanya adalah urutan tetap mesin itu.',
+  ],
+  merge: [
+    'Membutuhkan satu token dari SETIAP belt masuk.',
+    'Pasangan itu bergabung menjadi satu token berwarna baru.',
+    'Token yang tiba sendirian menunggu pasangannya di dalam.',
+  ],
+};
+
+const CHAIN_PAGE = {
+  titleEn: 'FORWARD CHAIN',
+  titleId: 'RANTAI MAJU',
+  noteEn: 'Facts move forward: the input becomes a new fact at every machine, until the output is reached.',
+  noteId: 'Fakta bergerak maju: input menjadi fakta baru di setiap mesin, sampai output tercapai.',
+  pointsEn: [
+    'Read the target first — that is the backward view.',
+    'Run the system — each machine fires its rule in order.',
+    'After RUN, open System trace to see the chain, its depth, the analysis, and the suggestion.',
+  ],
+  pointsId: [
+    'Baca target lebih dulu — itu pandangan mundurnya.',
+    'Jalankan sistem — setiap mesin menjalankan aturannya berurutan.',
+    'Setelah RUN, buka Jejak sistem untuk melihat rantai, kedalaman, analisis, dan sarannya.',
+  ],
+};
+
+export default function GuideBook({
+  chapter,
+  lang,
+  onLangChange,
+  onClose,
+}: {
+  chapter: number;
+  lang?: 'en' | 'id';
+  onLangChange?: (lang: 'en' | 'id') => void;
+  onClose: () => void;
+}) {
   const [page, setPage] = useState(0);
   const [turn, setTurn] = useState<'next' | 'prev' | null>(null);
+  const [bookLang, setBookLang] = useState<'en' | 'id'>(lang ?? 'en');
+  useEffect(() => {
+    if (lang) setBookLang(lang);
+  }, [lang]);
+  const toggleLang = () => {
+    const next = bookLang === 'en' ? 'id' : 'en';
+    setBookLang(next);
+    onLangChange?.(next);
+  };
 
   const go = (dir: 1 | -1) => {
     if (turn) return;
@@ -444,8 +522,14 @@ export default function GuideBook({ chapter, onClose }: { chapter: number; onClo
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  const type = PAGE_ORDER[page];
-  const sheetType = turn === 'next' ? PAGE_ORDER[Math.min(page + 1, PAGE_ORDER.length - 1)] : PAGE_ORDER[Math.max(page - 1, 0)];
+  const pageKind = PAGE_ORDER[page];
+  const type: NodeType = pageKind === 'chain' ? 'filter' : pageKind;
+  const sheetKind = turn === 'next' ? PAGE_ORDER[Math.min(page + 1, PAGE_ORDER.length - 1)] : PAGE_ORDER[Math.max(page - 1, 0)];
+  const sheetType: NodeType = sheetKind === 'chain' ? 'filter' : sheetKind;
+  const isChain = pageKind === 'chain';
+  const title = isChain ? (bookLang === 'id' ? CHAIN_PAGE.titleId : CHAIN_PAGE.titleEn) : PAGE_TITLES[type];
+  const note = isChain ? (bookLang === 'id' ? CHAIN_PAGE.noteId : CHAIN_PAGE.noteEn) : bookLang === 'id' ? MACHINE_NOTE_ID[type] : MACHINE_NOTE[type];
+  const points = isChain ? (bookLang === 'id' ? CHAIN_PAGE.pointsId : CHAIN_PAGE.pointsEn) : bookLang === 'id' ? PAGE_POINTS_ID[type] : PAGE_POINTS[type];
 
   return (
     <div
@@ -459,29 +543,40 @@ export default function GuideBook({ chapter, onClose }: { chapter: number; onClo
           ✕
         </button>
         <div className="book-page left">
-          <div className="book-kicker">GUIDE BOOK</div>
+          <div className="book-kicker">{bookLang === 'id' ? 'BUKU PANDUAN' : 'GUIDE BOOK'}</div>
           <img className="book-sprite" src={nodeImg(chapter, type)} alt="" />
-          <h3 className="book-title">{PAGE_TITLES[type]}</h3>
-          <p className="book-note">{MACHINE_NOTE[type]}</p>
+          <h3 className="book-title">{title}</h3>
+          <p className="book-note">{note}</p>
           <ul className="book-points">
-            {PAGE_POINTS[type].map((p) => (
+            {points.map((p) => (
               <li key={p}>{p}</li>
             ))}
           </ul>
           <div className="book-foot">
-            {PAGE_TITLES[type]} · page {page + 1} of {PAGE_ORDER.length}
+            {title} · {bookLang === 'id' ? 'halaman' : 'page'} {page + 1} {bookLang === 'id' ? 'dari' : 'of'} {PAGE_ORDER.length}
           </div>
         </div>
         <div className="book-spine" />
         <div className="book-page right">
           <DemoStage type={type} chapter={chapter} />
-          <p className="book-caption">The real machine, at work on a test strip.</p>
+          <p className="book-caption">
+            {isChain
+              ? bookLang === 'id'
+                ? 'Contoh rantai: INPUT → FILTER → OUTPUT.'
+                : 'One chain: INPUT → FILTER → OUTPUT.'
+              : bookLang === 'id'
+                ? 'Mesin aslinya, bekerja di jalur uji.'
+                : 'The real machine, at work on a test strip.'}
+          </p>
           <div className="book-nav">
             <button className="book-nav-btn" onClick={() => go(-1)} disabled={page === 0 || !!turn}>
-              ◀ Prev
+              ◀ {bookLang === 'id' ? 'Sebelumnya' : 'Prev'}
+            </button>
+            <button className="book-nav-btn" onClick={toggleLang}>
+              {bookLang === 'en' ? 'Bahasa Indonesia' : 'English'}
             </button>
             <button className="book-nav-btn" onClick={() => go(1)} disabled={page === PAGE_ORDER.length - 1 || !!turn}>
-              Next ▶
+              {bookLang === 'id' ? 'Berikutnya' : 'Next'} ▶
             </button>
           </div>
         </div>
